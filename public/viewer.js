@@ -16,10 +16,6 @@ const updateStackingForColumn = (columnElement) => {
   const cards = Array.from(columnElement.querySelectorAll('.character-card'));
 
   if (!cards.length) {
-    columnElement.style.removeProperty('--stack-overlap');
-    columnElement.style.removeProperty('--stack-overlap-negative');
-    columnElement.style.removeProperty('--stack-shift');
-    columnElement.style.removeProperty('--stack-shift-negative');
     return;
   }
 
@@ -29,14 +25,23 @@ const updateStackingForColumn = (columnElement) => {
     return;
   }
 
-  const maxOverlapRatio = 0.45;
-  const overlap = cardWidth * maxOverlapRatio;
-  const shift = overlap * 0.5;
+  const overlapRatio = 0.35;
+  const overlap = cardWidth * overlapRatio;
+  const accentRatio = 0.18;
+  const accentShift = cardWidth * accentRatio;
+  const anchorIndex = columnElement.classList.contains('scene__column--right')
+    ? cards.length - 1
+    : 0;
 
-  columnElement.style.setProperty('--stack-overlap', `${overlap}px`);
-  columnElement.style.setProperty('--stack-overlap-negative', `${-overlap}px`);
-  columnElement.style.setProperty('--stack-shift', `${shift}px`);
-  columnElement.style.setProperty('--stack-shift-negative', `${-shift}px`);
+  cards.forEach((card, index) => {
+    const offsetFromAnchor = index - anchorIndex;
+    const primaryShift = -overlap * offsetFromAnchor;
+    const subtleShift =
+      offsetFromAnchor === 0 ? 0 : Math.sign(offsetFromAnchor) * accentShift;
+    const totalShift = primaryShift + subtleShift;
+
+    card.style.setProperty('--stack-translation', `${totalShift}px`);
+  });
 };
 
 const applyStackingSpacing = () => {
@@ -47,14 +52,14 @@ const applyStackingSpacing = () => {
 const createCharacterCard = (characterId, position, column, index, totalCount) => {
   const wrapper = document.createElement('div');
   wrapper.className = 'character-card';
-  wrapper.style.setProperty('--stack-index', index);
   wrapper.classList.add(`character-card--${column}`);
 
   const stackSize = totalCount ?? 0;
-  const overlayRank =
-    column === 'left' ? index + 1 : Math.max(stackSize - index, 0);
+  const overlayRank = column === 'left' ? index + 1 : stackSize - index;
 
   wrapper.style.zIndex = String(100 + overlayRank);
+
+  wrapper.style.setProperty('--stack-translation', '0px');
 
   if (!characterId) {
     wrapper.classList.add('character-card--empty');

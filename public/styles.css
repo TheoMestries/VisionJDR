@@ -131,9 +131,6 @@ main.layout {
   align-items: center;
   justify-content: flex-start;
   gap: 0;
-  --stack-overlap-negative: -64px;
-  --stack-shift: 28px;
-  --stack-shift-negative: -28px;
 }
 
 .scene__column--left {
@@ -168,16 +165,7 @@ main.layout {
 .scene__column .character-card {
   margin: 0;
   position: relative;
-}
-
-.scene__column--left .character-card {
-  margin-right: calc(var(--stack-index, 0) * var(--stack-overlap-negative, -64px));
-  transform: translateX(calc(var(--stack-index, 0) * var(--stack-shift, 28px)));
-}
-
-.scene__column--right .character-card {
-  margin-left: calc(var(--stack-index, 0) * var(--stack-overlap-negative, -64px));
-  transform: translateX(calc(var(--stack-index, 0) * var(--stack-shift-negative, -28px)));
+  transform: translateX(var(--stack-translation, 0px));
 }
 
 .character-card::before {
