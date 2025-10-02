@@ -6,13 +6,55 @@ const rightColumn = document.getElementById('right-column');
 let backgroundsById = {};
 let charactersById = {};
 let latestScene = null;
+let resizeFrame = null;
 
-const createCharacterCard = (characterId, position, column, index) => {
+const updateStackingForColumn = (columnElement) => {
+  if (!columnElement) {
+    return;
+  }
+
+  const cards = Array.from(columnElement.querySelectorAll('.character-card'));
+
+  if (!cards.length) {
+    columnElement.style.removeProperty('--stack-overlap');
+    columnElement.style.removeProperty('--stack-overlap-negative');
+    columnElement.style.removeProperty('--stack-shift');
+    columnElement.style.removeProperty('--stack-shift-negative');
+    return;
+  }
+
+  const cardWidth = cards[0].getBoundingClientRect().width;
+
+  if (!cardWidth) {
+    return;
+  }
+
+  const maxOverlapRatio = 0.45;
+  const overlap = cardWidth * maxOverlapRatio;
+  const shift = overlap * 0.5;
+
+  columnElement.style.setProperty('--stack-overlap', `${overlap}px`);
+  columnElement.style.setProperty('--stack-overlap-negative', `${-overlap}px`);
+  columnElement.style.setProperty('--stack-shift', `${shift}px`);
+  columnElement.style.setProperty('--stack-shift-negative', `${-shift}px`);
+};
+
+const applyStackingSpacing = () => {
+  updateStackingForColumn(leftColumn);
+  updateStackingForColumn(rightColumn);
+};
+
+const createCharacterCard = (characterId, position, column, index, totalCount) => {
   const wrapper = document.createElement('div');
   wrapper.className = 'character-card';
   wrapper.style.setProperty('--stack-index', index);
   wrapper.classList.add(`character-card--${column}`);
-  wrapper.style.zIndex = String(100 + index);
+
+  const stackSize = totalCount ?? 0;
+  const overlayRank =
+    column === 'left' ? index + 1 : Math.max(stackSize - index, 0);
+
+  wrapper.style.zIndex = String(100 + overlayRank);
 
   if (!characterId) {
     wrapper.classList.add('character-card--empty');
@@ -41,17 +83,33 @@ const renderScene = (scene) => {
   leftColumn.replaceChildren();
   rightColumn.replaceChildren();
 
+  const leftCount = scene.left.length;
   scene.left.forEach((characterId, index) => {
     leftColumn.appendChild(
-      createCharacterCard(characterId, `gauche ${index + 1}`, 'left', index)
+      createCharacterCard(
+        characterId,
+        `gauche ${index + 1}`,
+        'left',
+        index,
+        leftCount
+      )
     );
   });
 
+  const rightCount = scene.right.length;
   scene.right.forEach((characterId, index) => {
     rightColumn.appendChild(
-      createCharacterCard(characterId, `droite ${index + 1}`, 'right', index)
+      createCharacterCard(
+        characterId,
+        `droite ${index + 1}`,
+        'right',
+        index,
+        rightCount
+      )
     );
   });
+
+  requestAnimationFrame(applyStackingSpacing);
 
   const updatedAt = new Date(scene.updatedAt ?? Date.now());
   const formattedTime = new Intl.DateTimeFormat('fr-FR', {
@@ -91,3 +149,18 @@ const initialise = async () => {
 };
 
 initialise();
+
+window.addEventListener('resize', () => {
+  if (!latestScene) {
+    return;
+  }
+
+  if (resizeFrame) {
+    cancelAnimationFrame(resizeFrame);
+  }
+
+  resizeFrame = requestAnimationFrame(() => {
+    applyStackingSpacing();
+    resizeFrame = null;
+  });
+});
