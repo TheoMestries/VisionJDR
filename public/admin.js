@@ -17,10 +17,156 @@ let characters = [];
 let backgroundsById = {};
 let charactersById = {};
 let currentScene = null;
+let previewLayoutFrame = null;
 
-const createCharacterCard = (characterId, label) => {
+const updateStackingForColumn = (columnElement) => {
+  if (!columnElement) {
+    return;
+  }
+
+  const cards = Array.from(columnElement.querySelectorAll('.character-card'));
+
+  if (!cards.length) {
+    return;
+  }
+
+  const cardWidth = cards[0].getBoundingClientRect().width;
+
+  if (!cardWidth) {
+    return;
+  }
+
+  const columnWidth = columnElement.getBoundingClientRect().width;
+
+  if (!columnWidth) {
+    return;
+  }
+
+  const baseOverlapRatio = 0.35;
+  const accentScale = 0.18 / baseOverlapRatio;
+  const count = cards.length;
+
+  let overlapRatio = baseOverlapRatio;
+
+  if (count > 1) {
+    const capacity = columnWidth / cardWidth;
+    const denominator = count - 1 - accentScale;
+
+    if (denominator > 0) {
+      const requiredOverlap = (count - capacity) / denominator;
+
+      if (requiredOverlap > overlapRatio) {
+        overlapRatio = requiredOverlap;
+      }
+    }
+  }
+
+  overlapRatio = Math.min(Math.max(overlapRatio, baseOverlapRatio), 1.05);
+
+  const overlap = cardWidth * overlapRatio;
+  const accentRatio = overlapRatio * accentScale;
+  const accentShift = cardWidth * accentRatio;
+  const anchorIndex = columnElement.classList.contains('scene__column--right')
+    ? cards.length - 1
+    : 0;
+
+  cards.forEach((card, index) => {
+    const offsetFromAnchor = index - anchorIndex;
+    const primaryShift = -overlap * offsetFromAnchor;
+    const subtleShift =
+      offsetFromAnchor === 0 ? 0 : Math.sign(offsetFromAnchor) * accentShift;
+    const totalShift = primaryShift + subtleShift;
+
+    card.style.setProperty('--stack-translation', `${totalShift}px`);
+  });
+};
+
+const applyPreviewStacking = () => {
+  updateStackingForColumn(previewLeft);
+  updateStackingForColumn(previewRight);
+};
+
+const calculatePreviewScale = () => {
+  if (!previewScene) {
+    return 1;
+  }
+
+  const overlay = previewScene.querySelector('.scene__overlay');
+
+  if (!overlay) {
+    return 1;
+  }
+
+  const sceneBounds = previewScene.getBoundingClientRect();
+
+  if (!sceneBounds.height) {
+    return 1;
+  }
+
+  const overlayStyles = getComputedStyle(overlay);
+  const paddingTop = parseFloat(overlayStyles.paddingTop) || 0;
+  const paddingBottom = parseFloat(overlayStyles.paddingBottom) || 0;
+
+  const columnHeights = [previewLeft, previewRight]
+    .filter(Boolean)
+    .map((column) => column.scrollHeight || 0);
+
+  const tallestColumn = columnHeights.length ? Math.max(...columnHeights) : 0;
+
+  if (!tallestColumn) {
+    return 1;
+  }
+
+  const requiredHeight = tallestColumn + paddingTop + paddingBottom;
+
+  if (!requiredHeight) {
+    return 1;
+  }
+
+  const rawScale = sceneBounds.height / requiredHeight;
+  const clampedScale = Math.max(Math.min(rawScale, 1), 0.35);
+
+  return clampedScale;
+};
+
+const refreshPreviewLayout = () => {
+  if (!previewScene) {
+    previewLayoutFrame = null;
+    return;
+  }
+
+  previewScene.style.setProperty('--preview-scale', '1');
+  applyPreviewStacking();
+
+  requestAnimationFrame(() => {
+    const scale = calculatePreviewScale();
+    previewScene.style.setProperty('--preview-scale', scale.toFixed(3));
+
+    requestAnimationFrame(() => {
+      applyPreviewStacking();
+      previewLayoutFrame = null;
+    });
+  });
+};
+
+const schedulePreviewLayout = () => {
+  if (previewLayoutFrame) {
+    cancelAnimationFrame(previewLayoutFrame);
+  }
+
+  previewLayoutFrame = requestAnimationFrame(refreshPreviewLayout);
+};
+
+const createCharacterCard = (characterId, label, column, index, totalCount) => {
   const wrapper = document.createElement('div');
   wrapper.className = 'character-card';
+  wrapper.classList.add(`character-card--${column}`);
+
+  const stackSize = totalCount ?? 0;
+  const overlayRank = column === 'left' ? index + 1 : stackSize - index;
+
+  wrapper.style.zIndex = String(100 + overlayRank);
+  wrapper.style.setProperty('--stack-translation', '0px');
 
   if (!characterId) {
     wrapper.classList.add('character-card--empty');
@@ -45,13 +191,33 @@ const renderPreview = (scene) => {
   previewLeft.replaceChildren();
   previewRight.replaceChildren();
 
+  const leftCount = scene.left.length;
   scene.left.forEach((characterId, index) => {
-    previewLeft.appendChild(createCharacterCard(characterId, `gauche ${index + 1}`));
+    previewLeft.appendChild(
+      createCharacterCard(
+        characterId,
+        `gauche ${index + 1}`,
+        'left',
+        index,
+        leftCount
+      )
+    );
   });
 
+  const rightCount = scene.right.length;
   scene.right.forEach((characterId, index) => {
-    previewRight.appendChild(createCharacterCard(characterId, `droite ${index + 1}`));
+    previewRight.appendChild(
+      createCharacterCard(
+        characterId,
+        `droite ${index + 1}`,
+        'right',
+        index,
+        rightCount
+      )
+    );
   });
+
+  schedulePreviewLayout();
 };
 
 const applySceneToForm = (scene) => {
@@ -158,3 +324,11 @@ const initialise = async () => {
 };
 
 initialise();
+
+window.addEventListener('resize', () => {
+  if (!currentScene) {
+    return;
+  }
+
+  schedulePreviewLayout();
+});
