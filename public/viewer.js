@@ -7,9 +7,12 @@ let backgroundsById = {};
 let charactersById = {};
 let latestScene = null;
 
-const createCharacterCard = (characterId, position) => {
+const createCharacterCard = (characterId, position, column, index) => {
   const wrapper = document.createElement('div');
   wrapper.className = 'character-card';
+  wrapper.style.setProperty('--stack-index', index);
+  wrapper.classList.add(`character-card--${column}`);
+  wrapper.style.zIndex = String(100 + index);
 
   if (!characterId) {
     wrapper.classList.add('character-card--empty');
@@ -39,11 +42,15 @@ const renderScene = (scene) => {
   rightColumn.replaceChildren();
 
   scene.left.forEach((characterId, index) => {
-    leftColumn.appendChild(createCharacterCard(characterId, `gauche ${index + 1}`));
+    leftColumn.appendChild(
+      createCharacterCard(characterId, `gauche ${index + 1}`, 'left', index)
+    );
   });
 
   scene.right.forEach((characterId, index) => {
-    rightColumn.appendChild(createCharacterCard(characterId, `droite ${index + 1}`));
+    rightColumn.appendChild(
+      createCharacterCard(characterId, `droite ${index + 1}`, 'right', index)
+    );
   });
 
   const updatedAt = new Date(scene.updatedAt ?? Date.now());

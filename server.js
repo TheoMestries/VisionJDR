@@ -49,6 +49,10 @@ const library = { backgrounds, characters };
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.get('/viewer', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 app.get('/api/library', (req, res) => {
   res.json(library);
 });
