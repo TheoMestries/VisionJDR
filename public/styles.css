@@ -119,8 +119,8 @@ main.layout {
 }
 
 .scene--preview {
-  min-height: clamp(220px, 40vh, 400px);
-  --preview-scale: 1;
+  min-height: clamp(220px, 40vh, 360px);
+  --preview-scale: 0.62;
   --scene-gap: calc(1.5rem * var(--preview-scale));
   --scene-padding-inline: calc(clamp(1.5rem, 4vw, 3rem) * var(--preview-scale));
   --scene-padding-bottom: calc(clamp(0.5rem, 2.5vh, 1.5rem) * var(--preview-scale));
