@@ -25,9 +25,35 @@ const updateStackingForColumn = (columnElement) => {
     return;
   }
 
-  const overlapRatio = 0.35;
+  const columnWidth = columnElement.getBoundingClientRect().width;
+
+  if (!columnWidth) {
+    return;
+  }
+
+  const baseOverlapRatio = 0.35;
+  const accentScale = 0.18 / baseOverlapRatio;
+  const count = cards.length;
+
+  let overlapRatio = baseOverlapRatio;
+
+  if (count > 1) {
+    const capacity = columnWidth / cardWidth;
+    const denominator = count - 1 - accentScale;
+
+    if (denominator > 0) {
+      const requiredOverlap = (count - capacity) / denominator;
+
+      if (requiredOverlap > overlapRatio) {
+        overlapRatio = requiredOverlap;
+      }
+    }
+  }
+
+  overlapRatio = Math.min(Math.max(overlapRatio, baseOverlapRatio), 1.05);
+
   const overlap = cardWidth * overlapRatio;
-  const accentRatio = 0.18;
+  const accentRatio = overlapRatio * accentScale;
   const accentShift = cardWidth * accentRatio;
   const anchorIndex = columnElement.classList.contains('scene__column--right')
     ? cards.length - 1
