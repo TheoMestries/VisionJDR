@@ -102,6 +102,8 @@ main.layout {
   border-radius: 0;
   box-shadow: none;
   background: #000;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .scene--player .scene__overlay {
