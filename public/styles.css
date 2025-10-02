@@ -125,17 +125,21 @@ main.layout {
 }
 
 .scene__column {
-  display: grid;
-  align-content: center;
-  gap: 1.5rem;
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0;
 }
 
 .scene__column--left {
-  justify-items: flex-start;
+  align-items: center;
 }
 
 .scene__column--right {
-  justify-items: flex-end;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .character-card {
@@ -156,6 +160,21 @@ main.layout {
   border: 2px solid rgba(255, 255, 255, 0.35);
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.55);
   transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.scene__column .character-card {
+  margin: 0;
+  position: relative;
+}
+
+.scene__column--left .character-card {
+  margin-right: calc(var(--stack-index, 0) * -4rem);
+  transform: translateX(calc(var(--stack-index, 0) * 28px));
+}
+
+.scene__column--right .character-card {
+  margin-left: calc(var(--stack-index, 0) * -4rem);
+  transform: translateX(calc(var(--stack-index, 0) * -28px));
 }
 
 .character-card::before {
