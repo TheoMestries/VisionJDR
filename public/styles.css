@@ -94,6 +94,14 @@ main.layout {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: linear-gradient(160deg, #1e293b, #020617);
   box-shadow: var(--shadow-elevated);
+  --scene-gap: 1.5rem;
+  --scene-padding-inline: clamp(1.5rem, 4vw, 3rem);
+  --scene-padding-bottom: clamp(0.5rem, 2.5vh, 1.5rem);
+  --card-height: clamp(20rem, 60vh, 60dvh);
+  --card-width: clamp(12rem, 24vw, 26rem);
+  --card-padding: clamp(1rem, 1.8vh, 2.2rem);
+  --card-font-size: clamp(1.1rem, 2vh, 1.85rem);
+  --card-radius: 18px;
 }
 
 .scene--player {
@@ -112,6 +120,15 @@ main.layout {
 
 .scene--preview {
   min-height: clamp(220px, 40vh, 400px);
+  --preview-scale: 1;
+  --scene-gap: calc(1.5rem * var(--preview-scale));
+  --scene-padding-inline: calc(clamp(1.5rem, 4vw, 3rem) * var(--preview-scale));
+  --scene-padding-bottom: calc(clamp(0.5rem, 2.5vh, 1.5rem) * var(--preview-scale));
+  --card-height: calc(clamp(20rem, 60vh, 60dvh) * var(--preview-scale));
+  --card-width: calc(clamp(12rem, 24vw, 26rem) * var(--preview-scale));
+  --card-padding: calc(clamp(1rem, 1.8vh, 2.2rem) * var(--preview-scale));
+  --card-font-size: calc(clamp(1.1rem, 2vh, 1.85rem) * var(--preview-scale));
+  --card-radius: calc(18px * var(--preview-scale));
 }
 
 .scene__overlay {
@@ -119,9 +136,9 @@ main.layout {
   inset: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.5rem;
-  padding: clamp(1.5rem, 4vw, 3rem);
-  padding-bottom: clamp(0.5rem, 2.5vh, 1.5rem);
+  gap: var(--scene-gap);
+  padding: var(--scene-padding-inline);
+  padding-bottom: var(--scene-padding-bottom);
   backdrop-filter: blur(0.5px);
   align-content: end;
   align-items: end;
@@ -154,18 +171,18 @@ main.layout {
 
 .character-card {
   flex: 0 0 auto;
-  height: clamp(20rem, 60vh, 60dvh);
+  height: var(--card-height);
   width: auto;
   aspect-ratio: 2 / 3;
-  max-width: clamp(12rem, 24vw, 26rem);
-  border-radius: 18px;
+  max-width: var(--card-width);
+  border-radius: var(--card-radius);
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding: clamp(1rem, 1.8vh, 2.2rem);
+  padding: var(--card-padding);
   text-align: center;
   color: white;
-  font-size: clamp(1.1rem, 2vh, 1.85rem);
+  font-size: var(--card-font-size);
   font-weight: 600;
   letter-spacing: 0.02em;
   position: relative;
