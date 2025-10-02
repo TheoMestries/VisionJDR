@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VisionJDR - Console admin</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="admin">
+    <main class="layout layout--admin">
+      <header class="top-bar">
+        <div>
+          <h1>VisionJDR – Console admin</h1>
+          <p class="top-bar__subtitle">Composer et diffuser des scènes 3v2 en direct</p>
+        </div>
+        <a class="top-bar__link" href="/" target="_blank" rel="noreferrer">Voir l'écran joueur</a>
+      </header>
+
+      <section class="admin-panel">
+        <form id="scene-form" class="admin-form" autocomplete="off">
+          <h2>Scène 3v2</h2>
+
+          <div class="form-grid">
+            <label class="field">
+              <span class="field__label">Décor</span>
+              <select id="background" name="background"></select>
+            </label>
+
+            <div class="field field--stack">
+              <span class="field__label">Personnages à gauche (2)</span>
+              <select id="left-0" name="left-0"></select>
+              <select id="left-1" name="left-1"></select>
+            </div>
+
+            <div class="field field--stack">
+              <span class="field__label">Personnages à droite (3)</span>
+              <select id="right-0" name="right-0"></select>
+              <select id="right-1" name="right-1"></select>
+              <select id="right-2" name="right-2"></select>
+            </div>
+          </div>
+
+          <div class="form__actions">
+            <button class="button" type="submit">Afficher la scène</button>
+            <span class="form__status" id="form-status" role="status" aria-live="polite"></span>
+          </div>
+        </form>
+
+        <section class="preview" aria-live="polite">
+          <h2>Prévisualisation</h2>
+          <div class="scene scene--preview" id="preview-scene">
+            <div class="scene__overlay">
+              <div class="scene__column scene__column--left" id="preview-left"></div>
+              <div class="scene__column scene__column--right" id="preview-right"></div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/admin.js" type="module"></script>
+  </body>
+</html>
