@@ -23,12 +23,24 @@ body {
   background: var(--bg-body);
   color: var(--text-primary);
   min-height: 100vh;
+  min-height: 100dvh;
+}
+
+body.viewer {
+  background: #000;
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 main.layout {
+  min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
-  gap: 2rem;
-  padding: 2.5rem clamp(1.5rem, 5vw, 4rem);
+  grid-template-rows: auto 1fr;
+  align-items: stretch;
+  gap: clamp(1.5rem, 3vw, 2.5rem);
+  padding: clamp(1.5rem, 4vw, 3rem);
 }
 
 .layout--admin {
@@ -76,11 +88,24 @@ main.layout {
 .scene {
   position: relative;
   border-radius: var(--radius-large);
-  min-height: clamp(420px, 65vh, 720px);
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: linear-gradient(160deg, #1e293b, #020617);
   box-shadow: var(--shadow-elevated);
+}
+
+.scene--player {
+  flex: 1;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: #000;
+}
+
+.scene--player .scene__overlay {
+  padding: 0;
 }
 
 .scene--preview {
