@@ -116,17 +116,19 @@ main.layout {
 
 .scene__overlay {
   position: absolute;
-  inset: auto 0 0 0;
+  inset: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.5rem;
   padding: clamp(1.5rem, 4vw, 3rem);
+  padding-bottom: clamp(0.5rem, 2.5vh, 1.5rem);
   backdrop-filter: blur(0.5px);
   align-content: end;
   align-items: end;
   min-height: 40vh;
   min-height: 40dvh;
-  max-height: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .scene__column {
@@ -151,16 +153,19 @@ main.layout {
 }
 
 .character-card {
-  width: clamp(140px, 30vw, 220px);
-  aspect-ratio: 3 / 4;
+  flex: 0 0 auto;
+  height: clamp(20rem, 60vh, 60dvh);
+  width: auto;
+  aspect-ratio: 2 / 3;
+  max-width: clamp(12rem, 24vw, 26rem);
   border-radius: 18px;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding: 1rem;
+  padding: clamp(1rem, 1.8vh, 2.2rem);
   text-align: center;
   color: white;
-  font-size: 1.1rem;
+  font-size: clamp(1.1rem, 2vh, 1.85rem);
   font-weight: 600;
   letter-spacing: 0.02em;
   position: relative;
@@ -168,6 +173,7 @@ main.layout {
   border: 2px solid rgba(255, 255, 255, 0.35);
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.55);
   transition: transform var(--transition), box-shadow var(--transition);
+  pointer-events: auto;
 }
 
 .scene__column .character-card {
@@ -301,7 +307,7 @@ select:focus {
   }
 
   .character-card {
-    width: clamp(120px, 45vw, 200px);
+    height: clamp(16rem, 58vh, 58dvh);
   }
 
   .top-bar {
