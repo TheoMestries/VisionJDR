@@ -53,7 +53,9 @@ const renderScene = (scene) => {
     second: '2-digit'
   }).format(updatedAt);
 
-  subtitleElement.textContent = `Dernière mise à jour : ${formattedTime}`;
+  if (subtitleElement) {
+    subtitleElement.textContent = `Dernière mise à jour : ${formattedTime}`;
+  }
 };
 
 const initialise = async () => {
@@ -63,7 +65,9 @@ const initialise = async () => {
   ]);
 
   if (!libraryResponse.ok || !sceneResponse.ok) {
-    subtitleElement.textContent = "Impossible de charger les scènes";
+    if (subtitleElement) {
+      subtitleElement.textContent = 'Impossible de charger les scènes';
+    }
     return;
   }
 
