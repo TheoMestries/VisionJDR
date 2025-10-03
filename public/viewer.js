@@ -87,23 +87,42 @@ const createCharacterCard = (characterId, position, column, index, totalCount) =
 
   wrapper.style.setProperty('--stack-translation', '0px');
 
+  const label = document.createElement('span');
+  label.className = 'character-card__label';
+
   if (!characterId) {
     wrapper.classList.add('character-card--empty');
-    wrapper.innerHTML = `<span class="character-card__label">Emplacement ${position}</span>`;
+    label.textContent = `Emplacement ${position}`;
+    wrapper.appendChild(label);
     return wrapper;
   }
 
   const character = charactersById[characterId];
   const characterName = character?.name ?? 'Inconnu';
 
+  label.textContent = characterName;
+
   if (character?.image) {
     wrapper.classList.add('character-card--with-image');
-    wrapper.style.background = `linear-gradient(180deg, rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.82)), url("${character.image}") center / cover no-repeat`;
+
+    const imageElement = document.createElement('img');
+    imageElement.className = 'character-card__image';
+    imageElement.src = character.image;
+    imageElement.alt = characterName;
+    imageElement.loading = 'lazy';
+
+    wrapper.appendChild(imageElement);
+
+    const normalizedPath = (character.image ?? '').split('?')[0].toLowerCase();
+
+    if (normalizedPath.endsWith('.png')) {
+      wrapper.classList.add('character-card--transparent');
+    }
   } else {
     wrapper.style.background = character?.color ?? '#475569';
   }
 
-  wrapper.innerHTML = `<span class="character-card__label">${characterName}</span>`;
+  wrapper.appendChild(label);
 
   return wrapper;
 };
