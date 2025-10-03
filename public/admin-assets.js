@@ -9,6 +9,16 @@ const backgroundCount = document.getElementById('background-count');
 
 let library = { backgrounds: [], characters: [] };
 
+const statusByType = {
+  character: characterStatus,
+  background: backgroundStatus
+};
+
+const endpointByType = {
+  character: '/api/assets/characters/',
+  background: '/api/assets/backgrounds/'
+};
+
 const setStatus = (element, message, state = null) => {
   if (!element) {
     return;
@@ -109,6 +119,22 @@ const createAssetCard = (asset, type) => {
     item.appendChild(dateElement);
   }
 
+  if (asset.origin === 'upload') {
+    const actions = document.createElement('div');
+    actions.className = 'asset-card__actions';
+
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'asset-card__button';
+    deleteButton.textContent = 'Supprimer';
+    deleteButton.dataset.assetId = asset.id;
+    deleteButton.dataset.assetType = type;
+    deleteButton.dataset.action = 'delete-asset';
+
+    actions.appendChild(deleteButton);
+    item.appendChild(actions);
+  }
+
   return item;
 };
 
@@ -165,6 +191,78 @@ const refreshLibrary = async () => {
   renderAssetList(backgroundList, library.backgrounds ?? [], 'background', backgroundCount);
 };
 
+const deleteAsset = async (type, assetId, buttonElement) => {
+  const endpoint = endpointByType[type];
+  const statusElement = statusByType[type];
+
+  if (!endpoint || !statusElement) {
+    return;
+  }
+
+  setStatus(statusElement, 'Suppression en cours…', 'pending');
+
+  if (buttonElement) {
+    buttonElement.disabled = true;
+    buttonElement.dataset.originalLabel = buttonElement.textContent;
+    buttonElement.textContent = 'Suppression…';
+  }
+
+  try {
+    const response = await fetch(`${endpoint}${encodeURIComponent(assetId)}`, {
+      method: 'DELETE'
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const message = errorData?.error || 'La suppression a échoué.';
+      setStatus(statusElement, message, 'error');
+      clearStatusLater(statusElement);
+      return;
+    }
+
+    setStatus(statusElement, 'Média supprimé.', 'success');
+    clearStatusLater(statusElement);
+    await refreshLibrary();
+  } catch (error) {
+    setStatus(statusElement, "Une erreur réseau est survenue.", 'error');
+    clearStatusLater(statusElement);
+  } finally {
+    if (buttonElement) {
+      buttonElement.disabled = false;
+      buttonElement.textContent = buttonElement.dataset.originalLabel || 'Supprimer';
+      delete buttonElement.dataset.originalLabel;
+    }
+  }
+};
+
+const handleAssetListClick = (event) => {
+  const trigger = event.target.closest('button[data-action="delete-asset"]');
+
+  if (!trigger) {
+    return;
+  }
+
+  const assetId = trigger.dataset.assetId;
+  const assetType = trigger.dataset.assetType;
+
+  if (!assetId || !assetType) {
+    return;
+  }
+
+  const confirmationMessage =
+    assetType === 'background'
+      ? 'Supprimer ce décor de la médiathèque ?'
+      : 'Supprimer ce personnage de la médiathèque ?';
+
+  if (!window.confirm(confirmationMessage)) {
+    return;
+  }
+
+  deleteAsset(assetType, assetId, trigger).catch(() => {
+    // Errors are handled within deleteAsset.
+  });
+};
+
 const handleUpload = (formElement, endpoint, statusElement) => {
   if (!formElement) {
     return;
@@ -212,6 +310,14 @@ const handleUpload = (formElement, endpoint, statusElement) => {
 
 handleUpload(characterForm, '/api/assets/characters', characterStatus);
 handleUpload(backgroundForm, '/api/assets/backgrounds', backgroundStatus);
+
+if (characterList) {
+  characterList.addEventListener('click', handleAssetListClick);
+}
+
+if (backgroundList) {
+  backgroundList.addEventListener('click', handleAssetListClick);
+}
 
 refreshLibrary().catch(() => {
   setStatus(characterStatus, 'Impossible de charger la médiathèque.', 'error');
