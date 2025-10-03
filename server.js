@@ -212,6 +212,13 @@ const selectCharacters = (count, offset = 0) => {
   return result;
 };
 
+const MIRRORED_ORIENTATION = 'mirrored';
+const NORMAL_ORIENTATION = 'normal';
+const VALID_ORIENTATIONS = new Set([NORMAL_ORIENTATION, MIRRORED_ORIENTATION]);
+
+const withDefaultOrientation = (ids) =>
+  ids.map((id) => (id ? { id, orientation: NORMAL_ORIENTATION } : null));
+
 const defaultScene = () => {
   const layout = layoutsById['2v3'] ?? sceneLayouts[0];
   const backgroundOption = backgrounds[0]?.id ?? null;
@@ -219,8 +226,8 @@ const defaultScene = () => {
   return {
     background: backgroundOption,
     layout: layout.id,
-    right: selectCharacters(layout.right, 0),
-    left: selectCharacters(layout.left, layout.right),
+    right: withDefaultOrientation(selectCharacters(layout.right, 0)),
+    left: withDefaultOrientation(selectCharacters(layout.left, layout.right)),
     updatedAt: new Date().toISOString()
   };
 };
@@ -364,7 +371,34 @@ const normaliseScene = (scene) => {
 
     return Array.from({ length: limit }, (_, index) => {
       const candidate = trimmed[index];
-      return charactersById[candidate]?.id || null;
+
+      if (!candidate) {
+        return null;
+      }
+
+      const rawId =
+        typeof candidate === 'string'
+          ? candidate
+          : typeof candidate === 'object'
+            ? candidate.id
+            : null;
+
+      const id = charactersById[rawId]?.id || null;
+
+      if (!id) {
+        return null;
+      }
+
+      const rawOrientation =
+        typeof candidate === 'object' && candidate
+          ? candidate.orientation
+          : null;
+
+      const orientation = VALID_ORIENTATIONS.has(rawOrientation)
+        ? rawOrientation
+        : NORMAL_ORIENTATION;
+
+      return { id, orientation };
     });
   };
 

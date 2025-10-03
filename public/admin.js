@@ -23,6 +23,35 @@ let leftSelectElements = [];
 let rightSelectElements = [];
 let previewLayoutFrame = null;
 
+const ORIENTATION_NORMAL = 'normal';
+const ORIENTATION_MIRRORED = 'mirrored';
+const VALID_ORIENTATIONS = new Set([ORIENTATION_NORMAL, ORIENTATION_MIRRORED]);
+
+const orientationOptions = [
+  { value: ORIENTATION_NORMAL, label: 'Orientation normale' },
+  { value: ORIENTATION_MIRRORED, label: 'Orientation inversée' }
+];
+
+const getSlotInfo = (slot) => {
+  if (!slot) {
+    return { id: null, orientation: ORIENTATION_NORMAL };
+  }
+
+  if (typeof slot === 'string') {
+    return { id: slot, orientation: ORIENTATION_NORMAL };
+  }
+
+  if (typeof slot === 'object') {
+    const id = slot.id ?? null;
+    const orientation = VALID_ORIENTATIONS.has(slot.orientation)
+      ? slot.orientation
+      : ORIENTATION_NORMAL;
+    return { id, orientation };
+  }
+
+  return { id: null, orientation: ORIENTATION_NORMAL };
+};
+
 const updateStackingForColumn = (columnElement) => {
   if (!columnElement) {
     return;
@@ -145,7 +174,7 @@ const schedulePreviewLayout = () => {
   previewLayoutFrame = requestAnimationFrame(refreshPreviewLayout);
 };
 
-const createCharacterCard = (characterId, label, column, index, totalCount) => {
+const createCharacterCard = (slot, label, column, index, totalCount) => {
   const wrapper = document.createElement('div');
   wrapper.className = 'character-card';
   wrapper.classList.add(`character-card--${column}`);
@@ -155,6 +184,8 @@ const createCharacterCard = (characterId, label, column, index, totalCount) => {
 
   wrapper.style.zIndex = String(100 + overlayRank);
   wrapper.style.setProperty('--stack-translation', '0px');
+
+  const { id: characterId, orientation } = getSlotInfo(slot);
 
   if (!characterId) {
     wrapper.classList.add('character-card--empty');
@@ -167,12 +198,33 @@ const createCharacterCard = (characterId, label, column, index, totalCount) => {
 
   if (character?.image) {
     wrapper.classList.add('character-card--with-image');
-    wrapper.style.background = `linear-gradient(180deg, rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.82)), url("${character.image}") center / cover no-repeat`;
+
+    const imageElement = document.createElement('img');
+    imageElement.className = 'character-card__image';
+    imageElement.src = character.image;
+    imageElement.alt = characterName;
+    imageElement.loading = 'lazy';
+
+    if (orientation === ORIENTATION_MIRRORED) {
+      imageElement.classList.add('character-card__image--mirrored');
+    }
+
+    wrapper.appendChild(imageElement);
+
+    const normalizedPath = (character.image ?? '').split('?')[0].toLowerCase();
+
+    if (normalizedPath.endsWith('.png')) {
+      wrapper.classList.add('character-card--transparent');
+    }
   } else {
     wrapper.style.background = character?.color ?? '#475569';
   }
 
-  wrapper.innerHTML = `<span class="character-card__label">${characterName}</span>`;
+  const labelElement = document.createElement('span');
+  labelElement.className = 'character-card__label';
+  labelElement.textContent = characterName;
+  wrapper.appendChild(labelElement);
+
   return wrapper;
 };
 
@@ -187,11 +239,12 @@ const renderPreview = (scene) => {
   previewLeft.replaceChildren();
   previewRight.replaceChildren();
 
-  const leftCount = scene.left.length;
-  scene.left.forEach((characterId, index) => {
+  const leftSlots = Array.isArray(scene.left) ? scene.left : [];
+  const leftCount = leftSlots.length;
+  leftSlots.forEach((slot, index) => {
     previewLeft.appendChild(
       createCharacterCard(
-        characterId,
+        slot,
         `gauche ${index + 1}`,
         'left',
         index,
@@ -200,11 +253,12 @@ const renderPreview = (scene) => {
     );
   });
 
-  const rightCount = scene.right.length;
-  scene.right.forEach((characterId, index) => {
+  const rightSlots = Array.isArray(scene.right) ? scene.right : [];
+  const rightCount = rightSlots.length;
+  rightSlots.forEach((slot, index) => {
     previewRight.appendChild(
       createCharacterCard(
-        characterId,
+        slot,
         `droite ${index + 1}`,
         'right',
         index,
@@ -233,9 +287,6 @@ const createPlaceholder = (message) => {
   return element;
 };
 
-const getSelectValues = (selects) =>
-  selects.map((select) => (select.value ? select.value : null));
-
 const populateSelect = (select, options, { includeEmpty = false } = {}) => {
   select.innerHTML = '';
 
@@ -254,7 +305,38 @@ const populateSelect = (select, options, { includeEmpty = false } = {}) => {
   });
 };
 
-const rebuildCharacterSelects = (container, count, prefix, emptyMessage) => {
+const createOrientationSelect = (prefix, index, sideLabel) => {
+  const select = document.createElement('select');
+  select.id = `${prefix}-${index}-orientation`;
+  select.name = `${prefix}-${index}-orientation`;
+  select.classList.add('slot-controls__orientation');
+  select.setAttribute('aria-label', `Orientation ${sideLabel} ${index + 1}`);
+
+  orientationOptions.forEach((option) => {
+    const element = document.createElement('option');
+    element.value = option.value;
+    element.textContent = option.label;
+    select.appendChild(element);
+  });
+
+  select.value = ORIENTATION_NORMAL;
+  return select;
+};
+
+const syncOrientationAvailability = (slotControls) => {
+  if (!slotControls) {
+    return;
+  }
+
+  const hasCharacter = Boolean(slotControls.characterSelect.value);
+  slotControls.orientationSelect.disabled = !hasCharacter;
+  slotControls.orientationSelect.classList.toggle(
+    'slot-controls__orientation--disabled',
+    !hasCharacter
+  );
+};
+
+const rebuildCharacterSlots = (container, count, prefix, emptyMessage) => {
   container.innerHTML = '';
 
   if (!count) {
@@ -262,21 +344,65 @@ const rebuildCharacterSelects = (container, count, prefix, emptyMessage) => {
     return [];
   }
 
+  const sideLabel = prefix === 'left' ? 'gauche' : 'droite';
+
   return Array.from({ length: count }, (_, index) => {
-    const select = document.createElement('select');
-    select.id = `${prefix}-${index}`;
-    select.name = `${prefix}-${index}`;
-    populateSelect(select, characters, { includeEmpty: true });
-    container.appendChild(select);
-    return select;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'slot-controls';
+
+    const characterSelect = document.createElement('select');
+    characterSelect.id = `${prefix}-${index}`;
+    characterSelect.name = `${prefix}-${index}`;
+    populateSelect(characterSelect, characters, { includeEmpty: true });
+
+    const orientationSelect = createOrientationSelect(prefix, index, sideLabel);
+
+    wrapper.appendChild(characterSelect);
+    wrapper.appendChild(orientationSelect);
+    container.appendChild(wrapper);
+
+    const slotControls = {
+      wrapper,
+      characterSelect,
+      orientationSelect
+    };
+
+    syncOrientationAvailability(slotControls);
+
+    return slotControls;
   });
+};
+
+const collectSlotValues = (slots) =>
+  slots.map(({ characterSelect, orientationSelect }) => {
+    const id = characterSelect.value || null;
+    const orientation = VALID_ORIENTATIONS.has(orientationSelect.value)
+      ? orientationSelect.value
+      : ORIENTATION_NORMAL;
+
+    if (!id) {
+      return null;
+    }
+
+    return { id, orientation };
+  });
+
+const applySlotValue = (slotControls, value) => {
+  if (!slotControls) {
+    return;
+  }
+
+  const { id, orientation } = getSlotInfo(value);
+  slotControls.characterSelect.value = id ?? '';
+  slotControls.orientationSelect.value = orientation;
+  syncOrientationAvailability(slotControls);
 };
 
 const getSceneFromForm = () => ({
   background: backgroundSelect.value,
   layout: layoutSelect.value || currentLayout?.id || null,
-  left: getSelectValues(leftSelectElements),
-  right: getSelectValues(rightSelectElements)
+  left: collectSlotValues(leftSelectElements),
+  right: collectSlotValues(rightSelectElements)
 });
 
 const applyLayout = (layout, { leftValues = [], rightValues = [] } = {}) => {
@@ -290,27 +416,41 @@ const applyLayout = (layout, { leftValues = [], rightValues = [] } = {}) => {
   setFieldLabel(leftLabel, layout.left, 'gauche');
   setFieldLabel(rightLabel, layout.right, 'droite');
 
-  leftSelectElements = rebuildCharacterSelects(
+  leftSelectElements = rebuildCharacterSlots(
     leftContainer,
     layout.left,
     'left',
     'Aucun personnage à gauche pour cette configuration.'
   );
-  rightSelectElements = rebuildCharacterSelects(
+  rightSelectElements = rebuildCharacterSlots(
     rightContainer,
     layout.right,
     'right',
     'Aucun personnage à droite pour cette configuration.'
   );
 
-  leftSelectElements.forEach((select, index) => {
-    select.value = leftValues[index] ?? '';
-    select.addEventListener('change', handleFormInputChange);
+  leftSelectElements.forEach((slot, index) => {
+    applySlotValue(slot, leftValues[index]);
+    slot.characterSelect.addEventListener('change', () => {
+      if (!slot.characterSelect.value) {
+        slot.orientationSelect.value = ORIENTATION_NORMAL;
+      }
+      syncOrientationAvailability(slot);
+      handleFormInputChange();
+    });
+    slot.orientationSelect.addEventListener('change', handleFormInputChange);
   });
 
-  rightSelectElements.forEach((select, index) => {
-    select.value = rightValues[index] ?? '';
-    select.addEventListener('change', handleFormInputChange);
+  rightSelectElements.forEach((slot, index) => {
+    applySlotValue(slot, rightValues[index]);
+    slot.characterSelect.addEventListener('change', () => {
+      if (!slot.characterSelect.value) {
+        slot.orientationSelect.value = ORIENTATION_NORMAL;
+      }
+      syncOrientationAvailability(slot);
+      handleFormInputChange();
+    });
+    slot.orientationSelect.addEventListener('change', handleFormInputChange);
   });
 };
 
@@ -359,8 +499,8 @@ function handleFormInputChange() {
 const handleLayoutSelectionChange = () => {
   const selectedLayout = layoutsById[layoutSelect.value] ?? layouts[0] ?? null;
 
-  const preservedLeft = getSelectValues(leftSelectElements);
-  const preservedRight = getSelectValues(rightSelectElements);
+  const preservedLeft = collectSlotValues(leftSelectElements);
+  const preservedRight = collectSlotValues(rightSelectElements);
 
   applyLayout(selectedLayout, {
     leftValues: preservedLeft,
@@ -426,16 +566,16 @@ const handleLibraryUpdate = (nextLibrary) => {
 
   populateSelect(backgroundSelect, backgrounds);
 
-  leftSelectElements.forEach((select, index) => {
-    const previousValue = preservedScene.left[index] ?? '';
-    populateSelect(select, characters, { includeEmpty: true });
-    select.value = previousValue ?? '';
+  leftSelectElements.forEach((slot, index) => {
+    const previousValue = preservedScene.left[index] ?? null;
+    populateSelect(slot.characterSelect, characters, { includeEmpty: true });
+    applySlotValue(slot, previousValue);
   });
 
-  rightSelectElements.forEach((select, index) => {
-    const previousValue = preservedScene.right[index] ?? '';
-    populateSelect(select, characters, { includeEmpty: true });
-    select.value = previousValue ?? '';
+  rightSelectElements.forEach((slot, index) => {
+    const previousValue = preservedScene.right[index] ?? null;
+    populateSelect(slot.characterSelect, characters, { includeEmpty: true });
+    applySlotValue(slot, previousValue);
   });
 
   const backgroundValue = backgroundsById[preservedScene.background]

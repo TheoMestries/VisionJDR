@@ -256,6 +256,11 @@ main.layout {
   z-index: 0;
 }
 
+.character-card__image--mirrored {
+  transform: scaleX(-1);
+  transform-origin: center;
+}
+
 .character-card--empty {
   border: 2px dashed rgba(226, 232, 240, 0.35);
   color: rgba(226, 232, 240, 0.6);
@@ -346,6 +351,34 @@ main.layout {
 
 .field__stack select {
   margin: 0;
+}
+
+.slot-controls {
+  display: grid;
+  gap: 0.5rem;
+}
+
+@media (min-width: 720px) {
+  .slot-controls {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+  }
+}
+
+.slot-controls__orientation {
+  min-width: 10rem;
+  justify-self: start;
+}
+
+@media (min-width: 720px) {
+  .slot-controls__orientation {
+    justify-self: end;
+  }
+}
+
+.slot-controls__orientation--disabled {
+  opacity: 0.55;
 }
 
 .field__placeholder {

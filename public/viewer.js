@@ -75,7 +75,25 @@ const applyStackingSpacing = () => {
   updateStackingForColumn(rightColumn);
 };
 
-const createCharacterCard = (characterId, position, column, index, totalCount) => {
+const getSlotInfo = (slot) => {
+  if (!slot) {
+    return { id: null, orientation: 'normal' };
+  }
+
+  if (typeof slot === 'string') {
+    return { id: slot, orientation: 'normal' };
+  }
+
+  if (typeof slot === 'object') {
+    const id = slot.id ?? null;
+    const orientation = slot.orientation === 'mirrored' ? 'mirrored' : 'normal';
+    return { id, orientation };
+  }
+
+  return { id: null, orientation: 'normal' };
+};
+
+const createCharacterCard = (slot, position, column, index, totalCount) => {
   const wrapper = document.createElement('div');
   wrapper.className = 'character-card';
   wrapper.classList.add(`character-card--${column}`);
@@ -86,6 +104,8 @@ const createCharacterCard = (characterId, position, column, index, totalCount) =
   wrapper.style.zIndex = String(100 + overlayRank);
 
   wrapper.style.setProperty('--stack-translation', '0px');
+
+  const { id: characterId, orientation } = getSlotInfo(slot);
 
   if (!characterId) {
     const label = document.createElement('span');
@@ -108,6 +128,10 @@ const createCharacterCard = (characterId, position, column, index, totalCount) =
     imageElement.src = character.image;
     imageElement.alt = characterName;
     imageElement.loading = 'lazy';
+
+    if (orientation === 'mirrored') {
+      imageElement.classList.add('character-card__image--mirrored');
+    }
 
     wrapper.appendChild(imageElement);
 
@@ -136,11 +160,12 @@ const renderScene = (scene) => {
   leftColumn.replaceChildren();
   rightColumn.replaceChildren();
 
-  const leftCount = scene.left.length;
-  scene.left.forEach((characterId, index) => {
+  const leftSlots = Array.isArray(scene.left) ? scene.left : [];
+  const leftCount = leftSlots.length;
+  leftSlots.forEach((slot, index) => {
     leftColumn.appendChild(
       createCharacterCard(
-        characterId,
+        slot,
         `gauche ${index + 1}`,
         'left',
         index,
@@ -149,11 +174,12 @@ const renderScene = (scene) => {
     );
   });
 
-  const rightCount = scene.right.length;
-  scene.right.forEach((characterId, index) => {
+  const rightSlots = Array.isArray(scene.right) ? scene.right : [];
+  const rightCount = rightSlots.length;
+  rightSlots.forEach((slot, index) => {
     rightColumn.appendChild(
       createCharacterCard(
-        characterId,
+        slot,
         `droite ${index + 1}`,
         'right',
         index,
