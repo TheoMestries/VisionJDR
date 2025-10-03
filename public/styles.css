@@ -265,8 +265,9 @@ main.layout {
 .character-card--with-image {
   border: none;
   color: #f8fafc;
-  background-color: #0f172a;
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.6);
+  background: none;
+  box-shadow: none;
+  padding: 0;
 }
 
 .character-card--with-image::before {
@@ -278,7 +279,7 @@ main.layout {
   border: none;
   background: none;
   background-color: transparent;
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.45);
+  box-shadow: none;
 }
 
 .character-card--with-image .character-card__label,
