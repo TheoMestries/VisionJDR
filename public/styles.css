@@ -143,6 +143,7 @@ main.layout {
   --card-padding: clamp(0.45rem, calc(var(--card-height) * 0.1), 0.85rem);
   --card-font-size: clamp(0.75rem, calc(var(--card-height) * 0.18), 1.05rem);
   --card-radius: clamp(8px, calc(var(--card-height) * 0.12), 14px);
+
 }
 
 .scene__overlay {
