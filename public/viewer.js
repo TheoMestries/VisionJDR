@@ -87,10 +87,9 @@ const createCharacterCard = (characterId, position, column, index, totalCount) =
 
   wrapper.style.setProperty('--stack-translation', '0px');
 
-  const label = document.createElement('span');
-  label.className = 'character-card__label';
-
   if (!characterId) {
+    const label = document.createElement('span');
+    label.className = 'character-card__label';
     wrapper.classList.add('character-card--empty');
     label.textContent = `Emplacement ${position}`;
     wrapper.appendChild(label);
@@ -99,8 +98,7 @@ const createCharacterCard = (characterId, position, column, index, totalCount) =
 
   const character = charactersById[characterId];
   const characterName = character?.name ?? 'Inconnu';
-
-  label.textContent = characterName;
+  wrapper.setAttribute('aria-label', characterName);
 
   if (character?.image) {
     wrapper.classList.add('character-card--with-image');
@@ -121,8 +119,6 @@ const createCharacterCard = (characterId, position, column, index, totalCount) =
   } else {
     wrapper.style.background = character?.color ?? '#475569';
   }
-
-  wrapper.appendChild(label);
 
   return wrapper;
 };

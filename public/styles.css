@@ -220,7 +220,6 @@ main.layout {
   letter-spacing: 0.02em;
   position: relative;
   overflow: hidden;
-  border: 2px solid rgba(255, 255, 255, 0.35);
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.55);
   transition: transform var(--transition), box-shadow var(--transition);
   pointer-events: auto;
@@ -258,15 +257,15 @@ main.layout {
 }
 
 .character-card--empty {
-  border-style: dashed;
+  border: 2px dashed rgba(226, 232, 240, 0.35);
   color: rgba(226, 232, 240, 0.6);
   background: rgba(15, 23, 42, 0.5);
 }
 
 .character-card--with-image {
+  border: none;
   color: #f8fafc;
   background-color: #0f172a;
-  border-color: rgba(255, 255, 255, 0.6);
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.6);
 }
 
@@ -275,26 +274,20 @@ main.layout {
   opacity: 0;
 }
 
-.character-card--with-image .character-card__label {
-  background: rgba(15, 23, 42, 0.65);
-  padding: 0.35rem 0.85rem;
-  border-radius: 999px;
-  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.4);
-}
-
 .character-card--transparent {
+  border: none;
   background: none;
   background-color: transparent;
-  border-color: rgba(255, 255, 255, 0.5);
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.45);
+}
+
+.character-card--with-image .character-card__label,
+.character-card--transparent .character-card__label {
+  display: none;
 }
 
 .character-card--transparent::before {
   display: none;
-}
-
-.character-card--transparent .character-card__label {
-  background: rgba(15, 23, 42, 0.75);
 }
 
 .admin-panel {
