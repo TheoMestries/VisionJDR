@@ -1,11 +1,12 @@
 # VisionJDR
 
-Une petite application temps-réel permettant à un administrateur de composer une scène "3 vs 2" et de l'afficher instantanément sur les écrans des joueurs connectés.
+Une petite application temps-réel permettant à un administrateur de composer différentes scènes asymétriques (de 1v0 jusqu'à 3v3) et de les afficher instantanément sur les écrans des joueurs connectés.
 
 ## Fonctionnalités
 
 - **Bibliothèque de décors et personnages** préconfigurée et extensible.
-- **Console administrateur** pour choisir un décor, 3 personnages à droite et 2 personnages à gauche.
+- **Console administrateur** pour choisir un décor, sélectionner une configuration (1v0, 0v1, 1v1, 2v1, 1v2, 2v2, 2v3, 1v3, 3v1, 3v2 ou 3v3)
+  puis affecter les personnages sur chaque colonne.
 - **Prévisualisation en direct** de la scène avant diffusion.
 - **Diffusion instantanée** de la scène à tous les clients joueurs via WebSocket.
 
