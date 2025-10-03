@@ -86,66 +86,50 @@ const applyPreviewStacking = () => {
   updateStackingForColumn(previewRight);
 };
 
-const calculatePreviewScale = () => {
-  if (!previewScene) {
-    return 1;
-  }
-
-  const overlay = previewScene.querySelector('.scene__overlay');
-
-  if (!overlay) {
-    return 1;
-  }
-
-  const sceneBounds = previewScene.getBoundingClientRect();
-
-  if (!sceneBounds.height) {
-    return 1;
-  }
-
-  const overlayStyles = getComputedStyle(overlay);
-  const paddingTop = parseFloat(overlayStyles.paddingTop) || 0;
-  const paddingBottom = parseFloat(overlayStyles.paddingBottom) || 0;
-
-  const columnHeights = [previewLeft, previewRight]
-    .filter(Boolean)
-    .map((column) => column.scrollHeight || 0);
-
-  const tallestColumn = columnHeights.length ? Math.max(...columnHeights) : 0;
-
-  if (!tallestColumn) {
-    return 1;
-  }
-
-  const requiredHeight = tallestColumn + paddingTop + paddingBottom;
-
-  if (!requiredHeight) {
-    return 1;
-  }
-
-  const rawScale = sceneBounds.height / requiredHeight;
-  const clampedScale = Math.max(Math.min(rawScale, 1), 0.35);
-
-  return clampedScale;
-};
-
 const refreshPreviewLayout = () => {
   if (!previewScene) {
     previewLayoutFrame = null;
     return;
   }
 
-  previewScene.style.setProperty('--preview-scale', '1');
-  applyPreviewStacking();
-
   requestAnimationFrame(() => {
-    const scale = calculatePreviewScale();
-    previewScene.style.setProperty('--preview-scale', scale.toFixed(3));
+    const overlay = previewScene.querySelector('.scene__overlay');
 
-    requestAnimationFrame(() => {
+    if (!overlay) {
+      previewScene.style.removeProperty('--preview-available-height');
       applyPreviewStacking();
       previewLayoutFrame = null;
-    });
+      return;
+    }
+
+    const sceneBounds = previewScene.getBoundingClientRect();
+
+    if (!sceneBounds.height) {
+      previewScene.style.removeProperty('--preview-available-height');
+      applyPreviewStacking();
+      previewLayoutFrame = null;
+      return;
+    }
+
+    const overlayStyles = getComputedStyle(overlay);
+    const paddingTop = parseFloat(overlayStyles.paddingTop) || 0;
+    const paddingBottom = parseFloat(overlayStyles.paddingBottom) || 0;
+    const availableHeight = Math.max(
+      sceneBounds.height - paddingTop - paddingBottom,
+      0
+    );
+
+    if (availableHeight) {
+      previewScene.style.setProperty(
+        '--preview-available-height',
+        `${availableHeight}px`
+      );
+    } else {
+      previewScene.style.removeProperty('--preview-available-height');
+    }
+
+    applyPreviewStacking();
+    previewLayoutFrame = null;
   });
 };
 

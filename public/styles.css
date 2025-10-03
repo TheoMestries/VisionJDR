@@ -97,8 +97,17 @@ main.layout {
   --scene-gap: 1.5rem;
   --scene-padding-inline: clamp(1.5rem, 4vw, 3rem);
   --scene-padding-bottom: clamp(0.5rem, 2.5vh, 1.5rem);
-  --card-height: clamp(20rem, 60vh, 60dvh);
-  --card-width: clamp(12rem, 24vw, 26rem);
+  --scene-padding-top: var(--scene-padding-inline);
+  --card-base-height: clamp(20rem, 60vh, 60dvh);
+  --scene-min-height: max(18rem, var(--card-base-height));
+  --scene-card-height: max(
+    0px,
+    calc(
+      (100% - var(--scene-padding-top) - var(--scene-padding-bottom)) * 0.92
+    )
+  );
+  --card-height: min(var(--card-base-height), var(--scene-card-height));
+  --card-width: calc(var(--card-height) * (2 / 3));
   --card-padding: clamp(1rem, 1.8vh, 2.2rem);
   --card-font-size: clamp(1.1rem, 2vh, 1.85rem);
   --card-radius: 18px;
@@ -119,16 +128,21 @@ main.layout {
 }
 
 .scene--preview {
-  min-height: clamp(220px, 40vh, 400px);
-  --preview-scale: 1;
-  --scene-gap: calc(1.5rem * var(--preview-scale));
-  --scene-padding-inline: calc(clamp(1.5rem, 4vw, 3rem) * var(--preview-scale));
-  --scene-padding-bottom: calc(clamp(0.5rem, 2.5vh, 1.5rem) * var(--preview-scale));
-  --card-height: calc(clamp(20rem, 60vh, 60dvh) * var(--preview-scale));
-  --card-width: calc(clamp(12rem, 24vw, 26rem) * var(--preview-scale));
-  --card-padding: calc(clamp(1rem, 1.8vh, 2.2rem) * var(--preview-scale));
-  --card-font-size: calc(clamp(1.1rem, 2vh, 1.85rem) * var(--preview-scale));
-  --card-radius: calc(18px * var(--preview-scale));
+  min-height: clamp(140px, 22vh, 220px);
+  --scene-min-height: 0px;
+  --scene-gap: 0.85rem;
+  --scene-padding-inline: 1.25rem;
+  --scene-padding-bottom: 0.9rem;
+  --preview-card-scale: 0.33;
+  --preview-available-height: var(--scene-card-height);
+  --card-height: max(
+    0px,
+    calc(var(--preview-available-height) * var(--preview-card-scale))
+  );
+  --card-width: calc(var(--card-height) * (2 / 3));
+  --card-padding: clamp(0.45rem, calc(var(--card-height) * 0.1), 0.85rem);
+  --card-font-size: clamp(0.75rem, calc(var(--card-height) * 0.18), 1.05rem);
+  --card-radius: clamp(8px, calc(var(--card-height) * 0.12), 14px);
 }
 
 .scene__overlay {
@@ -142,8 +156,7 @@ main.layout {
   backdrop-filter: blur(0.5px);
   align-content: end;
   align-items: end;
-  min-height: 40vh;
-  min-height: 40dvh;
+  min-height: var(--scene-min-height);
   height: 100%;
   pointer-events: none;
 }
@@ -155,8 +168,7 @@ main.layout {
   align-items: flex-end;
   justify-content: flex-start;
   gap: 0;
-  min-height: 40vh;
-  min-height: 40dvh;
+  min-height: var(--scene-min-height);
   height: 100%;
 }
 
@@ -317,14 +329,29 @@ select:focus {
   margin: 0;
 }
 
+.preview .scene--preview {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  max-width: 520px;
+  justify-self: center;
+}
+
 @media (max-width: 900px) {
   .scene__overlay {
     gap: 1rem;
     padding: clamp(1rem, 5vw, 2rem);
   }
 
-  .character-card {
-    height: clamp(16rem, 58vh, 58dvh);
+  .scene {
+    --card-base-height: clamp(16rem, 58vh, 58dvh);
+    --scene-min-height: max(16rem, var(--card-base-height));
+  }
+
+  .scene--preview {
+    --scene-gap: 0.7rem;
+    --scene-padding-inline: 1.05rem;
+    --scene-padding-bottom: 0.75rem;
+    --preview-card-scale: 0.36;
   }
 
   .top-bar {
