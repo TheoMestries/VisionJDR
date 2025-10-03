@@ -103,7 +103,7 @@ main.layout {
   --scene-card-height: max(
     0px,
     calc(
-      (100% - var(--scene-padding-top) - var(--scene-padding-bottom)) * 0.92
+      (100% - var(--scene-padding-top) - var(--scene-padding-bottom)) * 1.20
     )
   );
   --card-height: min(var(--card-base-height), var(--scene-card-height));
