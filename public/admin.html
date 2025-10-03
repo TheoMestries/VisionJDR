@@ -11,32 +11,34 @@
       <header class="top-bar">
         <div>
           <h1>VisionJDR – Console admin</h1>
-          <p class="top-bar__subtitle">Composer et diffuser des scènes 3v2 en direct</p>
+          <p class="top-bar__subtitle">Composer et diffuser des scènes personnalisées en direct</p>
         </div>
         <a class="top-bar__link" href="/" target="_blank" rel="noreferrer">Voir l'écran joueur</a>
       </header>
 
       <section class="admin-panel">
         <form id="scene-form" class="admin-form" autocomplete="off">
-          <h2>Scène 3v2</h2>
+          <h2>Scène personnalisée</h2>
 
           <div class="form-grid">
+            <label class="field">
+              <span class="field__label">Configuration</span>
+              <select id="layout" name="layout"></select>
+            </label>
+
             <label class="field">
               <span class="field__label">Décor</span>
               <select id="background" name="background"></select>
             </label>
 
-            <div class="field field--stack">
-              <span class="field__label">Personnages à gauche (2)</span>
-              <select id="left-0" name="left-0"></select>
-              <select id="left-1" name="left-1"></select>
+            <div class="field field--stack" id="field-left">
+              <span class="field__label" id="left-label">Personnages à gauche</span>
+              <div class="field__stack" id="left-selects"></div>
             </div>
 
-            <div class="field field--stack">
-              <span class="field__label">Personnages à droite (3)</span>
-              <select id="right-0" name="right-0"></select>
-              <select id="right-1" name="right-1"></select>
-              <select id="right-2" name="right-2"></select>
+            <div class="field field--stack" id="field-right">
+              <span class="field__label" id="right-label">Personnages à droite</span>
+              <div class="field__stack" id="right-selects"></div>
             </div>
           </div>
 

@@ -27,6 +27,20 @@ const backgrounds = [
   }
 ];
 
+const sceneLayouts = [
+  { id: '1v0', label: '1 vs 0', left: 1, right: 0 },
+  { id: '0v1', label: '0 vs 1', left: 0, right: 1 },
+  { id: '1v1', label: '1 vs 1', left: 1, right: 1 },
+  { id: '2v1', label: '2 vs 1', left: 2, right: 1 },
+  { id: '1v2', label: '1 vs 2', left: 1, right: 2 },
+  { id: '2v2', label: '2 vs 2', left: 2, right: 2 },
+  { id: '2v3', label: '2 vs 3', left: 2, right: 3 },
+  { id: '1v3', label: '1 vs 3', left: 1, right: 3 },
+  { id: '3v1', label: '3 vs 1', left: 3, right: 1 },
+  { id: '3v2', label: '3 vs 2', left: 3, right: 2 },
+  { id: '3v3', label: '3 vs 3', left: 3, right: 3 }
+];
+
 const characters = [
   { id: 'warrior', name: 'Guerrier', color: '#d35400' },
   { id: 'mage', name: 'Mage', color: '#9b59b6' },
@@ -36,16 +50,44 @@ const characters = [
   { id: 'bard', name: 'Barde', color: '#e74c3c' }
 ];
 
-const defaultScene = () => ({
-  background: backgrounds[0].id,
-  right: characters.slice(0, 3).map((character) => character.id),
-  left: characters.slice(3, 5).map((character) => character.id),
-  updatedAt: new Date().toISOString()
-});
+const layoutsById = Object.fromEntries(sceneLayouts.map((layout) => [layout.id, layout]));
+const maxLeftSlots = Math.max(...sceneLayouts.map((layout) => layout.left));
+const maxRightSlots = Math.max(...sceneLayouts.map((layout) => layout.right));
+
+const selectCharacters = (count, offset = 0) => {
+  if (!count) {
+    return [];
+  }
+
+  if (!characters.length) {
+    return Array.from({ length: count }, () => null);
+  }
+
+  const result = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const character = characters[(offset + index) % characters.length];
+    result.push(character?.id ?? null);
+  }
+
+  return result;
+};
+
+const defaultScene = () => {
+  const layout = layoutsById['2v3'] ?? sceneLayouts[0];
+
+  return {
+    background: backgrounds[0].id,
+    layout: layout.id,
+    right: selectCharacters(layout.right, 0),
+    left: selectCharacters(layout.left, layout.right),
+    updatedAt: new Date().toISOString()
+  };
+};
 
 let currentScene = defaultScene();
 
-const library = { backgrounds, characters };
+const library = { backgrounds, characters, layouts: sceneLayouts };
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -71,13 +113,28 @@ const normaliseScene = (scene) => {
   }
 
   const background = backgrounds.find((option) => option.id === scene.background)?.id;
-  const left = Array.isArray(scene.left) ? scene.left.slice(0, 2) : [];
-  const right = Array.isArray(scene.right) ? scene.right.slice(0, 3) : [];
+  const leftInput = Array.isArray(scene.left) ? scene.left : [];
+  const rightInput = Array.isArray(scene.right) ? scene.right : [];
+
+  const requestedLayout = layoutsById[scene.layout];
+  const leftLength = Math.min(leftInput.length, maxLeftSlots);
+  const rightLength = Math.min(rightInput.length, maxRightSlots);
+
+  const fallbackLayout = sceneLayouts.find(
+    (option) => option.left === leftLength && option.right === rightLength
+  );
+
+  const layout = requestedLayout || fallbackLayout || layoutsById['2v3'] || sceneLayouts[0];
 
   const sanitiseSlot = (slot, limit) => {
-    const fallback = new Array(limit).fill(null);
-    return fallback.map((_, index) => {
-      const candidate = slot[index];
+    if (!limit) {
+      return [];
+    }
+
+    const trimmed = slot.slice(0, limit);
+
+    return Array.from({ length: limit }, (_, index) => {
+      const candidate = trimmed[index];
       return characters.find((option) => option.id === candidate)?.id || null;
     });
   };
@@ -88,8 +145,9 @@ const normaliseScene = (scene) => {
 
   return {
     background,
-    left: sanitiseSlot(left, 2),
-    right: sanitiseSlot(right, 3),
+    layout: layout.id,
+    left: sanitiseSlot(leftInput, layout.left),
+    right: sanitiseSlot(rightInput, layout.right),
     updatedAt: new Date().toISOString()
   };
 };

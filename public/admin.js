@@ -1,11 +1,10 @@
 const form = document.getElementById('scene-form');
+const layoutSelect = document.getElementById('layout');
 const backgroundSelect = document.getElementById('background');
-const leftSelects = [document.getElementById('left-0'), document.getElementById('left-1')];
-const rightSelects = [
-  document.getElementById('right-0'),
-  document.getElementById('right-1'),
-  document.getElementById('right-2')
-];
+const leftLabel = document.getElementById('left-label');
+const rightLabel = document.getElementById('right-label');
+const leftContainer = document.getElementById('left-selects');
+const rightContainer = document.getElementById('right-selects');
 const statusElement = document.getElementById('form-status');
 const previewScene = document.getElementById('preview-scene');
 const previewLeft = document.getElementById('preview-left');
@@ -14,9 +13,14 @@ const previewRight = document.getElementById('preview-right');
 let socket;
 let backgrounds = [];
 let characters = [];
+let layouts = [];
 let backgroundsById = {};
 let charactersById = {};
+let layoutsById = {};
 let currentScene = null;
+let currentLayout = null;
+let leftSelectElements = [];
+let rightSelectElements = [];
 let previewLayoutFrame = null;
 
 const updateStackingForColumn = (columnElement) => {
@@ -204,27 +208,25 @@ const renderPreview = (scene) => {
   schedulePreviewLayout();
 };
 
-const applySceneToForm = (scene) => {
-  if (!scene) {
+const setFieldLabel = (labelElement, count, side) => {
+  if (!labelElement) {
     return;
   }
 
-  backgroundSelect.value = scene.background;
-  leftSelects.forEach((select, index) => {
-    select.value = scene.left[index] ?? '';
-  });
-  rightSelects.forEach((select, index) => {
-    select.value = scene.right[index] ?? '';
-  });
-
-  renderPreview(scene);
+  labelElement.textContent = count
+    ? `Personnages à ${side} (${count})`
+    : `Personnages à ${side} (aucun)`;
 };
 
-const getSceneFromForm = () => ({
-  background: backgroundSelect.value,
-  left: leftSelects.map((select) => select.value || null),
-  right: rightSelects.map((select) => select.value || null)
-});
+const createPlaceholder = (message) => {
+  const element = document.createElement('p');
+  element.className = 'field__placeholder';
+  element.textContent = message;
+  return element;
+};
+
+const getSelectValues = (selects) =>
+  selects.map((select) => (select.value ? select.value : null));
 
 const populateSelect = (select, options, { includeEmpty = false } = {}) => {
   select.innerHTML = '';
@@ -239,19 +241,130 @@ const populateSelect = (select, options, { includeEmpty = false } = {}) => {
   options.forEach((option) => {
     const element = document.createElement('option');
     element.value = option.id;
-    element.textContent = option.name;
+    element.textContent = option.name ?? option.label;
     select.appendChild(element);
   });
 };
 
-const attachFormListeners = () => {
-  const inputs = [backgroundSelect, ...leftSelects, ...rightSelects];
-  inputs.forEach((input) => {
-    input.addEventListener('change', () => {
-      currentScene = getSceneFromForm();
-      renderPreview(currentScene);
-    });
+const rebuildCharacterSelects = (container, count, prefix, emptyMessage) => {
+  container.innerHTML = '';
+
+  if (!count) {
+    container.appendChild(createPlaceholder(emptyMessage));
+    return [];
+  }
+
+  return Array.from({ length: count }, (_, index) => {
+    const select = document.createElement('select');
+    select.id = `${prefix}-${index}`;
+    select.name = `${prefix}-${index}`;
+    populateSelect(select, characters, { includeEmpty: true });
+    container.appendChild(select);
+    return select;
   });
+};
+
+const getSceneFromForm = () => ({
+  background: backgroundSelect.value,
+  layout: layoutSelect.value || currentLayout?.id || null,
+  left: getSelectValues(leftSelectElements),
+  right: getSelectValues(rightSelectElements)
+});
+
+const applyLayout = (layout, { leftValues = [], rightValues = [] } = {}) => {
+  if (!layout) {
+    return;
+  }
+
+  currentLayout = layout;
+  layoutSelect.value = layout.id;
+
+  setFieldLabel(leftLabel, layout.left, 'gauche');
+  setFieldLabel(rightLabel, layout.right, 'droite');
+
+  leftSelectElements = rebuildCharacterSelects(
+    leftContainer,
+    layout.left,
+    'left',
+    'Aucun personnage à gauche pour cette configuration.'
+  );
+  rightSelectElements = rebuildCharacterSelects(
+    rightContainer,
+    layout.right,
+    'right',
+    'Aucun personnage à droite pour cette configuration.'
+  );
+
+  leftSelectElements.forEach((select, index) => {
+    select.value = leftValues[index] ?? '';
+    select.addEventListener('change', handleFormInputChange);
+  });
+
+  rightSelectElements.forEach((select, index) => {
+    select.value = rightValues[index] ?? '';
+    select.addEventListener('change', handleFormInputChange);
+  });
+};
+
+const findLayoutForScene = (scene) => {
+  if (!scene) {
+    return layouts[0] ?? null;
+  }
+
+  if (scene.layout && layoutsById[scene.layout]) {
+    return layoutsById[scene.layout];
+  }
+
+  const leftLength = Array.isArray(scene.left) ? scene.left.length : 0;
+  const rightLength = Array.isArray(scene.right) ? scene.right.length : 0;
+
+  return (
+    layouts.find((layout) => layout.left === leftLength && layout.right === rightLength) ??
+    layouts[0] ??
+    null
+  );
+};
+
+const applySceneToForm = (scene) => {
+  if (!scene) {
+    return;
+  }
+
+  const layout = findLayoutForScene(scene);
+
+  applyLayout(layout, {
+    leftValues: scene.left ?? [],
+    rightValues: scene.right ?? []
+  });
+
+  backgroundSelect.value = scene.background ?? '';
+
+  currentScene = getSceneFromForm();
+  renderPreview(currentScene);
+};
+
+function handleFormInputChange() {
+  currentScene = getSceneFromForm();
+  renderPreview(currentScene);
+}
+
+const handleLayoutSelectionChange = () => {
+  const selectedLayout = layoutsById[layoutSelect.value] ?? layouts[0] ?? null;
+
+  const preservedLeft = getSelectValues(leftSelectElements);
+  const preservedRight = getSelectValues(rightSelectElements);
+
+  applyLayout(selectedLayout, {
+    leftValues: preservedLeft,
+    rightValues: preservedRight
+  });
+
+  handleFormInputChange();
+};
+
+const attachFormListeners = () => {
+  backgroundSelect.addEventListener('change', handleFormInputChange);
+  layoutSelect.addEventListener('change', handleLayoutSelectionChange);
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -268,15 +381,19 @@ const attachFormListeners = () => {
 };
 
 const handleSceneUpdate = (scene) => {
-  currentScene = scene;
   applySceneToForm(scene);
-  const updatedAt = new Date(scene.updatedAt ?? Date.now());
+  const updatedAt = new Date((scene && scene.updatedAt) || Date.now());
   const formattedTime = new Intl.DateTimeFormat('fr-FR', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit'
   }).format(updatedAt);
-  statusElement.textContent = `Scène diffusée (${formattedTime})`;
+
+  const layoutLabel =
+    layoutsById[currentScene?.layout ?? scene?.layout ?? '']?.label ||
+    `${currentScene?.left?.length ?? 0} vs ${currentScene?.right?.length ?? 0}`;
+
+  statusElement.textContent = `Scène ${layoutLabel} diffusée (${formattedTime})`;
 };
 
 const initialise = async () => {
@@ -291,13 +408,20 @@ const initialise = async () => {
   const library = await libraryResponse.json();
   const sceneData = await sceneResponse.json();
 
-  backgrounds = library.backgrounds;
-  characters = library.characters;
+  backgrounds = library.backgrounds ?? [];
+  characters = library.characters ?? [];
+  layouts = library.layouts ?? [];
+
+  if (!layouts.length) {
+    layouts = [{ id: '2v3', label: '2 vs 3', left: 2, right: 3 }];
+  }
+
   backgroundsById = Object.fromEntries(backgrounds.map((item) => [item.id, item]));
   charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
+  layoutsById = Object.fromEntries(layouts.map((item) => [item.id, item]));
 
+  populateSelect(layoutSelect, layouts);
   populateSelect(backgroundSelect, backgrounds);
-  [...leftSelects, ...rightSelects].forEach((select) => populateSelect(select, characters, { includeEmpty: true }));
 
   attachFormListeners();
 
