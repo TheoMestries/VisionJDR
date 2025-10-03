@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VisionJDR - Gestion des médias</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="admin">
+    <main class="layout layout--admin">
+      <header class="top-bar">
+        <div>
+          <h1>VisionJDR – Médiathèque</h1>
+          <p class="top-bar__subtitle">
+            Importer et organiser les visuels pour les personnages et les décors
+          </p>
+        </div>
+        <nav class="top-bar__actions" aria-label="Navigation administration">
+          <a class="top-bar__link" href="/admin">Console de diffusion</a>
+          <a
+            class="top-bar__link top-bar__link--accent"
+            href="/"
+            target="_blank"
+            rel="noreferrer"
+            >Voir l'écran joueur</a
+          >
+        </nav>
+      </header>
+
+      <section class="admin-panel admin-panel--assets">
+        <form
+          id="character-upload-form"
+          class="admin-form admin-form--upload"
+          autocomplete="off"
+          enctype="multipart/form-data"
+        >
+          <h2>Ajouter une image personnage</h2>
+          <p class="admin-form__description">
+            Téléchargez une illustration pour l'utiliser dans la console admin et sur l'écran
+            joueur.
+          </p>
+          <label class="field">
+            <span class="field__label">Nom du personnage</span>
+            <input type="text" name="name" placeholder="Ex. Paladin de l'aube" />
+          </label>
+          <label class="field">
+            <span class="field__label">Image (PNG, JPG, WebP)</span>
+            <input type="file" name="image" accept="image/*" required />
+          </label>
+          <div class="form__actions">
+            <button class="button" type="submit">Enregistrer</button>
+            <span class="form__status" id="character-upload-status" role="status"></span>
+          </div>
+        </form>
+
+        <form
+          id="background-upload-form"
+          class="admin-form admin-form--upload"
+          autocomplete="off"
+          enctype="multipart/form-data"
+        >
+          <h2>Ajouter une image décor</h2>
+          <p class="admin-form__description">
+            Les images seront affichées en arrière-plan et adaptées automatiquement à l'écran.
+          </p>
+          <label class="field">
+            <span class="field__label">Nom du décor</span>
+            <input type="text" name="name" placeholder="Ex. Forêt embrumée" />
+          </label>
+          <label class="field">
+            <span class="field__label">Image (PNG, JPG, WebP)</span>
+            <input type="file" name="image" accept="image/*" required />
+          </label>
+          <div class="form__actions">
+            <button class="button" type="submit">Enregistrer</button>
+            <span class="form__status" id="background-upload-status" role="status"></span>
+          </div>
+        </form>
+
+        <section class="asset-gallery" aria-live="polite">
+          <h2>Médias enregistrés</h2>
+          <div class="asset-gallery__grid">
+            <article class="asset-group">
+              <div class="asset-group__header">
+                <h3>Personnages</h3>
+                <span class="asset-group__count" id="character-count">0</span>
+              </div>
+              <ul class="asset-list" id="character-assets"></ul>
+            </article>
+            <article class="asset-group">
+              <div class="asset-group__header">
+                <h3>Décors</h3>
+                <span class="asset-group__count" id="background-count">0</span>
+              </div>
+              <ul class="asset-list" id="background-assets"></ul>
+            </article>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/admin-assets.js" type="module"></script>
+  </body>
+</html>
