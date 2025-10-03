@@ -145,6 +145,46 @@ const createFileName = (originalName) => {
   return `${baseName}-${timestamp}-${randomSuffix()}${extension}`;
 };
 
+const normaliseUploadPath = (publicPath) => {
+  if (!publicPath || typeof publicPath !== 'string') {
+    return null;
+  }
+
+  const strippedPath = publicPath.replace(/^\/+/, '');
+  const absolutePath = path.resolve(__dirname, 'public', strippedPath);
+  const relativeToUploads = path.relative(UPLOADS_DIR, absolutePath);
+
+  if (relativeToUploads.startsWith('..') || path.isAbsolute(relativeToUploads)) {
+    return null;
+  }
+
+  return absolutePath;
+};
+
+const removeUploadFile = (publicPath) => {
+  const filePath = normaliseUploadPath(publicPath);
+
+  if (!filePath) {
+    return;
+  }
+
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch (error) {
+    // Intentionally ignore errors when removing files.
+  }
+};
+
+const ensureCustomCollection = (key) => {
+  if (!Array.isArray(customLibrary[key])) {
+    customLibrary[key] = [];
+  }
+
+  return customLibrary[key];
+};
+
 const imageFileFilter = (req, file, callback) => {
   if (!file.mimetype.startsWith('image/')) {
     callback(new Error('Seuls les fichiers images sont autorisés.'));
@@ -300,6 +340,42 @@ app.post(
   }
 );
 
+const createAssetDeletionHandler = (collectionKey) => (req, res) => {
+  const assetId = req.params?.id;
+  const collection = ensureCustomCollection(collectionKey);
+
+  if (!assetId) {
+    res.status(400).json({ error: "Identifiant du média manquant." });
+    return;
+  }
+
+  const assetIndex = collection.findIndex((item) => item.id === assetId);
+
+  if (assetIndex === -1) {
+    res.status(404).json({ error: 'Média introuvable.' });
+    return;
+  }
+
+  const asset = collection[assetIndex];
+
+  if (asset.origin !== 'upload') {
+    res.status(400).json({ error: 'Ce média ne peut pas être supprimé.' });
+    return;
+  }
+
+  collection.splice(assetIndex, 1);
+
+  if (asset.image) {
+    removeUploadFile(asset.image);
+  }
+
+  persistCustomLibrary();
+  refreshLibrary();
+  io.emit('library:update', library);
+
+  res.status(200).json({ success: true });
+};
+
 app.post(
   '/api/assets/backgrounds',
   withUploader(backgroundUpload.single('image')),
@@ -338,6 +414,9 @@ app.post(
     res.status(201).json({ background });
   }
 );
+
+app.delete('/api/assets/characters/:id', createAssetDeletionHandler('characters'));
+app.delete('/api/assets/backgrounds/:id', createAssetDeletionHandler('backgrounds'));
 
 app.get('/api/scene', (req, res) => {
   res.json({ scene: currentScene });
