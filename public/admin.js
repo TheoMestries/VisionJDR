@@ -158,13 +158,21 @@ const createCharacterCard = (characterId, label, column, index, totalCount) => {
 
   if (!characterId) {
     wrapper.classList.add('character-card--empty');
-    wrapper.innerHTML = `<span>Emplacement ${label}</span>`;
+    wrapper.innerHTML = `<span class="character-card__label">Emplacement ${label}</span>`;
     return wrapper;
   }
 
   const character = charactersById[characterId];
-  wrapper.style.background = character?.color ?? '#475569';
-  wrapper.innerHTML = `<span>${character?.name ?? 'Inconnu'}</span>`;
+  const characterName = character?.name ?? 'Inconnu';
+
+  if (character?.image) {
+    wrapper.classList.add('character-card--with-image');
+    wrapper.style.background = `linear-gradient(180deg, rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.82)), url("${character.image}") center / cover no-repeat`;
+  } else {
+    wrapper.style.background = character?.color ?? '#475569';
+  }
+
+  wrapper.innerHTML = `<span class="character-card__label">${characterName}</span>`;
   return wrapper;
 };
 
@@ -396,6 +404,50 @@ const handleSceneUpdate = (scene) => {
   statusElement.textContent = `Scène ${layoutLabel} diffusée (${formattedTime})`;
 };
 
+const handleLibraryUpdate = (nextLibrary) => {
+  if (!nextLibrary) {
+    return;
+  }
+
+  const nextBackgrounds = Array.isArray(nextLibrary.backgrounds)
+    ? nextLibrary.backgrounds
+    : backgrounds;
+  const nextCharacters = Array.isArray(nextLibrary.characters)
+    ? nextLibrary.characters
+    : characters;
+
+  backgrounds = nextBackgrounds;
+  characters = nextCharacters;
+
+  backgroundsById = Object.fromEntries(backgrounds.map((item) => [item.id, item]));
+  charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
+
+  const preservedScene = getSceneFromForm();
+
+  populateSelect(backgroundSelect, backgrounds);
+
+  leftSelectElements.forEach((select, index) => {
+    const previousValue = preservedScene.left[index] ?? '';
+    populateSelect(select, characters, { includeEmpty: true });
+    select.value = previousValue ?? '';
+  });
+
+  rightSelectElements.forEach((select, index) => {
+    const previousValue = preservedScene.right[index] ?? '';
+    populateSelect(select, characters, { includeEmpty: true });
+    select.value = previousValue ?? '';
+  });
+
+  const backgroundValue = backgroundsById[preservedScene.background]
+    ? preservedScene.background
+    : backgrounds[0]?.id ?? '';
+
+  backgroundSelect.value = backgroundValue;
+
+  currentScene = getSceneFromForm();
+  renderPreview(currentScene);
+};
+
 const initialise = async () => {
   const libraryResponse = await fetch('/api/library');
   const sceneResponse = await fetch('/api/scene');
@@ -427,6 +479,7 @@ const initialise = async () => {
 
   socket = io();
   socket.on('scene:update', handleSceneUpdate);
+  socket.on('library:update', handleLibraryUpdate);
 
   handleSceneUpdate(sceneData.scene);
 };

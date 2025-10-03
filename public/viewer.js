@@ -89,14 +89,21 @@ const createCharacterCard = (characterId, position, column, index, totalCount) =
 
   if (!characterId) {
     wrapper.classList.add('character-card--empty');
-    wrapper.innerHTML = `<span>Emplacement ${position}</span>`;
+    wrapper.innerHTML = `<span class="character-card__label">Emplacement ${position}</span>`;
     return wrapper;
   }
 
   const character = charactersById[characterId];
+  const characterName = character?.name ?? 'Inconnu';
 
-  wrapper.style.background = character?.color ?? '#475569';
-  wrapper.innerHTML = `<span>${character?.name ?? 'Inconnu'}</span>`;
+  if (character?.image) {
+    wrapper.classList.add('character-card--with-image');
+    wrapper.style.background = `linear-gradient(180deg, rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.82)), url("${character.image}") center / cover no-repeat`;
+  } else {
+    wrapper.style.background = character?.color ?? '#475569';
+  }
+
+  wrapper.innerHTML = `<span class="character-card__label">${characterName}</span>`;
 
   return wrapper;
 };
