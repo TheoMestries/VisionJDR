@@ -31,6 +31,14 @@
 
           <div class="form-grid">
             <label class="field">
+              <span class="field__label">Type de scène</span>
+              <select id="scene-type" name="scene-type">
+                <option value="character">Scène personnalisée</option>
+                <option value="video">Scène vidéo</option>
+              </select>
+            </label>
+
+            <label class="field">
               <span class="field__label">Configuration</span>
               <select id="layout" name="layout"></select>
             </label>
@@ -38,6 +46,11 @@
             <label class="field">
               <span class="field__label">Décor</span>
               <select id="background" name="background"></select>
+            </label>
+
+            <label class="field" id="field-video" hidden>
+              <span class="field__label">Vidéo</span>
+              <select id="video-track" name="video-track"></select>
             </label>
 
             <div class="field field--stack" id="field-left">
@@ -60,6 +73,19 @@
         <section class="preview" aria-live="polite">
           <h2>Prévisualisation</h2>
           <div class="scene scene--preview" id="preview-scene">
+            <div class="scene__video-container" id="preview-video-container" hidden>
+              <video
+                class="scene__video"
+                id="preview-video"
+                muted
+                loop
+                playsinline
+                preload="metadata"
+              ></video>
+              <p class="scene__video-placeholder" id="preview-video-placeholder">
+                Sélectionnez une vidéo pour la prévisualiser.
+              </p>
+            </div>
             <div class="scene__overlay">
               <div class="scene__column scene__column--left" id="preview-left"></div>
               <div class="scene__column scene__column--right" id="preview-right"></div>

@@ -2,6 +2,9 @@ const sceneElement = document.getElementById('scene');
 const subtitleElement = document.querySelector('.top-bar__subtitle');
 const leftColumn = document.getElementById('left-column');
 const rightColumn = document.getElementById('right-column');
+const sceneVideoContainer = document.getElementById('scene-video-container');
+const sceneVideoElement = document.getElementById('scene-video');
+const sceneVideoPlaceholder = document.getElementById('scene-video-placeholder');
 const viewerControls = document.getElementById('viewer-controls');
 const volumePanel = viewerControls?.querySelector('.viewer-controls__panel') ?? null;
 const volumeToggle = viewerControls?.querySelector('.viewer-controls__toggle') ?? null;
@@ -11,6 +14,8 @@ const volumeValue = viewerControls?.querySelector('.viewer-controls__value') ?? 
 let backgroundsById = {};
 let charactersById = {};
 let audioTracksById = {};
+let videoTracksById = {};
+let videoTracks = [];
 let latestScene = null;
 let resizeFrame = null;
 let latestAudioMix = { tracks: [] };
@@ -18,7 +23,16 @@ const audioPlayers = new Map();
 const AUDIO_SEEK_THRESHOLD = 0.25;
 const LOCAL_STORAGE_VOLUME_KEY = 'viewer:volume';
 
+let currentVideoSource = null;
+
 let globalVolume = 1;
+
+const SCENE_TYPE_CHARACTER = 'character';
+const SCENE_TYPE_VIDEO = 'video';
+const VIDEO_PLACEHOLDER_DEFAULT = 'Aucune vidéo en cours de diffusion.';
+const VIDEO_PLACEHOLDER_MISSING = 'Aucune vidéo sélectionnée.';
+const VIDEO_PLACEHOLDER_EMPTY = 'Aucune vidéo disponible.';
+const VIDEO_PLACEHOLDER_INTERACTION = 'Appuyez pour autoriser la lecture de la vidéo.';
 
 const audioUnlockState = {
   unlocked: false,
@@ -39,6 +53,54 @@ const computeEffectiveVolume = (volume) => {
   return clampVolume(base * globalVolume);
 };
 
+const showSceneVideoPlaceholder = (message) => {
+  if (!sceneVideoPlaceholder) {
+    return;
+  }
+
+  sceneVideoPlaceholder.hidden = false;
+  sceneVideoPlaceholder.textContent = message;
+};
+
+const hideSceneVideoPlaceholder = () => {
+  if (!sceneVideoPlaceholder) {
+    return;
+  }
+
+  sceneVideoPlaceholder.hidden = true;
+};
+
+const updateSceneVideoVolume = () => {
+  if (!sceneVideoElement) {
+    return;
+  }
+
+  sceneVideoElement.volume = computeEffectiveVolume(1);
+};
+
+const stopSceneVideo = () => {
+  if (!sceneVideoElement) {
+    currentVideoSource = null;
+    return;
+  }
+
+  try {
+    sceneVideoElement.pause();
+  } catch (error) {
+    /* Ignore pause errors. */
+  }
+
+  sceneVideoElement.removeAttribute('src');
+
+  try {
+    sceneVideoElement.load();
+  } catch (error) {
+    /* Ignore load errors when resetting the element. */
+  }
+
+  currentVideoSource = null;
+};
+
 const updateAllPlayerVolumes = () => {
   audioPlayers.forEach((player) => {
     if (!player || !player.audio) {
@@ -47,6 +109,8 @@ const updateAllPlayerVolumes = () => {
 
     player.audio.volume = computeEffectiveVolume(player.desiredVolume);
   });
+
+  updateSceneVideoVolume();
 };
 
 const persistGlobalVolume = (value) => {
@@ -199,6 +263,22 @@ const unlockAudioPlayback = () => {
   });
 
   markAudioUnlocked();
+
+  if (sceneVideoElement && currentVideoSource) {
+    try {
+      sceneVideoElement.muted = false;
+      updateSceneVideoVolume();
+      const playPromise = sceneVideoElement.play();
+
+      if (playPromise && typeof playPromise.then === 'function') {
+        playPromise.catch(() => {
+          /* Ignore unlock errors for video playback. */
+        });
+      }
+    } catch (error) {
+      /* Ignore unlock errors for the video element. */
+    }
+  }
 };
 
 const requestAudioUnlock = () => {
@@ -364,6 +444,108 @@ const renderScene = (scene) => {
 
   latestScene = scene;
 
+  const updatedAt = new Date(scene.updatedAt ?? Date.now());
+  const formattedTime = new Intl.DateTimeFormat('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  }).format(updatedAt);
+
+  const sceneType = scene?.type === SCENE_TYPE_VIDEO ? SCENE_TYPE_VIDEO : SCENE_TYPE_CHARACTER;
+
+  if (sceneElement) {
+    sceneElement.dataset.sceneType = sceneType;
+  }
+
+  if (sceneType === SCENE_TYPE_VIDEO) {
+    const videoId = scene.video ?? '';
+    const asset = videoTracksById[videoId] ?? null;
+
+    if (sceneElement) {
+      sceneElement.style.background = 'radial-gradient(circle at 30% 30%, #1f2937, #0f172a 70%)';
+    }
+
+    leftColumn.replaceChildren();
+    rightColumn.replaceChildren();
+
+    if (sceneVideoContainer) {
+      sceneVideoContainer.hidden = false;
+    }
+
+    if (asset?.file && sceneVideoElement) {
+      const source = asset.file;
+
+      if (currentVideoSource !== source) {
+        try {
+          sceneVideoElement.pause();
+        } catch (error) {
+          /* Ignore pause errors during source change. */
+        }
+
+        sceneVideoElement.src = source;
+
+        try {
+          sceneVideoElement.load();
+        } catch (error) {
+          /* Ignore load errors triggered during rapid updates. */
+        }
+
+        currentVideoSource = source;
+      } else {
+        try {
+          sceneVideoElement.currentTime = 0;
+        } catch (error) {
+          /* Ignore seek errors when resetting playback. */
+        }
+      }
+
+      sceneVideoElement.playsInline = true;
+      sceneVideoElement.controls = false;
+      sceneVideoElement.loop = false;
+      sceneVideoElement.muted = false;
+      updateSceneVideoVolume();
+
+      const playPromise = sceneVideoElement.play();
+
+      if (playPromise && typeof playPromise.then === 'function') {
+        playPromise
+          .then(() => {
+            hideSceneVideoPlaceholder();
+            markAudioUnlocked();
+          })
+          .catch((error) => {
+            showSceneVideoPlaceholder(VIDEO_PLACEHOLDER_INTERACTION);
+
+            if (error?.name === 'NotAllowedError' || error?.name === 'NotSupportedError') {
+              requestAudioUnlock();
+            }
+          });
+      } else {
+        hideSceneVideoPlaceholder();
+        markAudioUnlocked();
+      }
+    } else {
+      stopSceneVideo();
+      showSceneVideoPlaceholder(
+        videoTracks.length ? VIDEO_PLACEHOLDER_MISSING : VIDEO_PLACEHOLDER_EMPTY
+      );
+    }
+
+    if (subtitleElement) {
+      subtitleElement.textContent = `Dernière mise à jour : ${formattedTime}`;
+    }
+
+    requestAudioUnlock();
+    return;
+  }
+
+  stopSceneVideo();
+  showSceneVideoPlaceholder(VIDEO_PLACEHOLDER_DEFAULT);
+
+  if (sceneVideoContainer) {
+    sceneVideoContainer.hidden = true;
+  }
+
   const background = backgroundsById[scene.background];
   sceneElement.style.background = background?.background ?? 'linear-gradient(160deg, #1e293b, #020617)';
 
@@ -399,13 +581,6 @@ const renderScene = (scene) => {
   });
 
   requestAnimationFrame(applyStackingSpacing);
-
-  const updatedAt = new Date(scene.updatedAt ?? Date.now());
-  const formattedTime = new Intl.DateTimeFormat('fr-FR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  }).format(updatedAt);
 
   if (subtitleElement) {
     subtitleElement.textContent = `Dernière mise à jour : ${formattedTime}`;
@@ -590,6 +765,8 @@ const handleLibraryUpdate = (library) => {
       item
     ])
   );
+  videoTracks = Array.isArray(library.videoTracks) ? library.videoTracks : [];
+  videoTracksById = Object.fromEntries(videoTracks.map((item) => [item.id, item]));
 
   if (latestScene) {
     renderScene(latestScene);

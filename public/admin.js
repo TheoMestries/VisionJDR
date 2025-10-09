@@ -1,18 +1,28 @@
 const form = document.getElementById('scene-form');
+const sceneTypeSelect = document.getElementById('scene-type');
 const layoutSelect = document.getElementById('layout');
 const backgroundSelect = document.getElementById('background');
+const videoSelect = document.getElementById('video-track');
 const leftLabel = document.getElementById('left-label');
 const rightLabel = document.getElementById('right-label');
+const leftField = document.getElementById('field-left');
+const rightField = document.getElementById('field-right');
 const leftContainer = document.getElementById('left-selects');
 const rightContainer = document.getElementById('right-selects');
 const statusElement = document.getElementById('form-status');
 const previewScene = document.getElementById('preview-scene');
+const previewVideoContainer = document.getElementById('preview-video-container');
+const previewVideo = document.getElementById('preview-video');
+const previewVideoPlaceholder = document.getElementById('preview-video-placeholder');
 const previewLeft = document.getElementById('preview-left');
 const previewRight = document.getElementById('preview-right');
 const audioSelect = document.getElementById('audio-track');
 const audioAddButton = document.querySelector('.audio-mixer__add');
 const audioActiveList = document.getElementById('audio-active-list');
 const audioEmptyState = document.getElementById('audio-empty');
+const layoutField = layoutSelect ? layoutSelect.closest('.field') : null;
+const backgroundField = backgroundSelect ? backgroundSelect.closest('.field') : null;
+const videoField = document.getElementById('field-video');
 
 let socket;
 let backgrounds = [];
@@ -28,6 +38,8 @@ let rightSelectElements = [];
 let previewLayoutFrame = null;
 let audioTracks = [];
 let audioTracksById = {};
+let videoTracks = [];
+let videoTracksById = {};
 let currentAudioMix = { tracks: [] };
 const adminAudioPlayers = new Map();
 let audioUiFrame = null;
@@ -43,6 +55,13 @@ const orientationOptions = [
   { value: ORIENTATION_NORMAL, label: 'Orientation normale' },
   { value: ORIENTATION_MIRRORED, label: 'Orientation inversée' }
 ];
+
+const SCENE_TYPE_CHARACTER = 'character';
+const SCENE_TYPE_VIDEO = 'video';
+const VALID_SCENE_TYPES = new Set([SCENE_TYPE_CHARACTER, SCENE_TYPE_VIDEO]);
+
+const getSceneTypeFromValue = (value) =>
+  VALID_SCENE_TYPES.has(value) ? value : SCENE_TYPE_CHARACTER;
 
 const getSlotInfo = (slot) => {
   if (!slot) {
@@ -245,8 +264,80 @@ const renderPreview = (scene) => {
     return;
   }
 
+  const sceneType = getSceneTypeFromValue(scene.type);
+
+  if (sceneType === SCENE_TYPE_VIDEO) {
+    previewScene.dataset.sceneType = SCENE_TYPE_VIDEO;
+    const track = videoTracksById[scene.video] ?? null;
+    previewScene.style.background = 'radial-gradient(circle at 30% 30%, #1f2937, #0f172a 70%)';
+    previewLeft.replaceChildren();
+    previewRight.replaceChildren();
+
+    if (previewVideoContainer) {
+      previewVideoContainer.hidden = false;
+      previewVideoContainer.removeAttribute('aria-hidden');
+    }
+
+    if (track?.file && previewVideo) {
+      if (previewVideo.src !== track.file) {
+        previewVideo.pause();
+        previewVideo.src = track.file;
+        previewVideo.load();
+      }
+
+      previewVideo.muted = true;
+      previewVideo.loop = true;
+      previewVideo.playsInline = true;
+
+      const playback = previewVideo.play();
+
+      if (playback && typeof playback.catch === 'function') {
+        playback.catch(() => {
+          /* Ignore autoplay restrictions in preview. */
+        });
+      }
+
+      if (previewVideoPlaceholder) {
+        previewVideoPlaceholder.hidden = true;
+      }
+    } else {
+      if (previewVideo) {
+        previewVideo.pause();
+        previewVideo.removeAttribute('src');
+        previewVideo.load();
+      }
+
+      if (previewVideoPlaceholder) {
+        previewVideoPlaceholder.hidden = false;
+        previewVideoPlaceholder.textContent = videoTracks.length
+          ? 'Sélectionnez une vidéo pour la prévisualiser.'
+          : 'Aucune vidéo disponible.';
+      }
+    }
+
+    return;
+  }
+
+  previewScene.dataset.sceneType = SCENE_TYPE_CHARACTER;
+
   const background = backgroundsById[scene.background];
   previewScene.style.background = background?.background ?? 'linear-gradient(160deg, #1e293b, #020617)';
+
+  if (previewVideoContainer) {
+    previewVideoContainer.hidden = true;
+    previewVideoContainer.setAttribute('aria-hidden', 'true');
+  }
+
+  if (previewVideo) {
+    previewVideo.pause();
+    previewVideo.removeAttribute('src');
+    previewVideo.load();
+  }
+
+  if (previewVideoPlaceholder) {
+    previewVideoPlaceholder.hidden = false;
+    previewVideoPlaceholder.textContent = 'Sélectionnez une vidéo pour la prévisualiser.';
+  }
 
   previewLeft.replaceChildren();
   previewRight.replaceChildren();
@@ -282,6 +373,44 @@ const renderPreview = (scene) => {
   schedulePreviewLayout();
 };
 
+const updateSceneTypeUI = (type) => {
+  const sceneType = getSceneTypeFromValue(type);
+  const isVideo = sceneType === SCENE_TYPE_VIDEO;
+
+  toggleFieldVisibility(layoutField, !isVideo);
+  toggleFieldVisibility(backgroundField, !isVideo);
+  toggleFieldVisibility(leftField, !isVideo);
+  toggleFieldVisibility(rightField, !isVideo);
+  toggleFieldVisibility(videoField, isVideo);
+
+  if (layoutSelect) {
+    layoutSelect.disabled = isVideo;
+  }
+
+  if (backgroundSelect) {
+    backgroundSelect.disabled = isVideo;
+  }
+
+  const updateSlotState = ({ characterSelect, orientationSelect }) => {
+    if (characterSelect) {
+      characterSelect.disabled = isVideo;
+    }
+
+    if (orientationSelect) {
+      orientationSelect.disabled = isVideo;
+    }
+  };
+
+  leftSelectElements.forEach(updateSlotState);
+  rightSelectElements.forEach(updateSlotState);
+
+  updateVideoSelectAvailability();
+
+  if (previewScene) {
+    previewScene.dataset.sceneType = sceneType;
+  }
+};
+
 const setFieldLabel = (labelElement, count, side) => {
   if (!labelElement) {
     return;
@@ -297,6 +426,20 @@ const createPlaceholder = (message) => {
   element.className = 'field__placeholder';
   element.textContent = message;
   return element;
+};
+
+const toggleFieldVisibility = (element, visible) => {
+  if (!element) {
+    return;
+  }
+
+  if (visible) {
+    element.hidden = false;
+    element.removeAttribute('aria-hidden');
+  } else {
+    element.hidden = true;
+    element.setAttribute('aria-hidden', 'true');
+  }
 };
 
 const populateSelect = (select, options, { includeEmpty = false } = {}) => {
@@ -315,6 +458,39 @@ const populateSelect = (select, options, { includeEmpty = false } = {}) => {
     element.textContent = option.name ?? option.label;
     select.appendChild(element);
   });
+};
+
+const populateVideoSelect = (select, tracks) => {
+  if (!select) {
+    return;
+  }
+
+  select.innerHTML = '';
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = tracks.length
+    ? 'Sélectionnez une vidéo'
+    : 'Aucune vidéo disponible';
+  placeholder.selected = true;
+  placeholder.dataset.placeholder = 'true';
+  select.appendChild(placeholder);
+
+  tracks.forEach((track) => {
+    const option = document.createElement('option');
+    option.value = track.id;
+    option.textContent = track.name || 'Vidéo';
+    select.appendChild(option);
+  });
+};
+
+const updateVideoSelectAvailability = () => {
+  if (!videoSelect) {
+    return;
+  }
+
+  const hasVideos = videoTracks.length > 0;
+  videoSelect.disabled = !hasVideos;
 };
 
 const populateAudioSelect = (select, tracks) => {
@@ -1202,12 +1378,27 @@ const applySlotValue = (slotControls, value) => {
   syncOrientationAvailability(slotControls);
 };
 
-const getSceneFromForm = () => ({
-  background: backgroundSelect.value,
-  layout: layoutSelect.value || currentLayout?.id || null,
-  left: collectSlotValues(leftSelectElements),
-  right: collectSlotValues(rightSelectElements)
-});
+const getSceneFromForm = () => {
+  const type = getSceneTypeFromValue(sceneTypeSelect?.value);
+  const baseScene = {
+    type,
+    background: backgroundSelect.value,
+    layout: layoutSelect.value || currentLayout?.id || null,
+    left: collectSlotValues(leftSelectElements),
+    right: collectSlotValues(rightSelectElements)
+  };
+
+  if (type === SCENE_TYPE_VIDEO) {
+    const selectedVideo = videoSelect?.value || '';
+
+    return {
+      ...baseScene,
+      video: selectedVideo || null
+    };
+  }
+
+  return baseScene;
+};
 
 const applyLayout = (layout, { leftValues = [], rightValues = [] } = {}) => {
   if (!layout) {
@@ -1263,6 +1454,10 @@ const findLayoutForScene = (scene) => {
     return layouts[0] ?? null;
   }
 
+  if (getSceneTypeFromValue(scene.type) === SCENE_TYPE_VIDEO) {
+    return layouts[0] ?? null;
+  }
+
   if (scene.layout && layoutsById[scene.layout]) {
     return layoutsById[scene.layout];
   }
@@ -1279,6 +1474,25 @@ const findLayoutForScene = (scene) => {
 
 const applySceneToForm = (scene) => {
   if (!scene) {
+    return;
+  }
+
+  const sceneType = getSceneTypeFromValue(scene.type);
+
+  if (sceneTypeSelect) {
+    sceneTypeSelect.value = sceneType;
+  }
+
+  updateSceneTypeUI(sceneType);
+
+  if (sceneType === SCENE_TYPE_VIDEO) {
+    if (videoSelect) {
+      const videoValue = scene.video && videoTracksById[scene.video] ? scene.video : '';
+      videoSelect.value = videoValue;
+    }
+
+    currentScene = getSceneFromForm();
+    renderPreview(currentScene);
     return;
   }
 
@@ -1315,12 +1529,35 @@ const handleLayoutSelectionChange = () => {
 };
 
 const attachFormListeners = () => {
+  if (sceneTypeSelect) {
+    sceneTypeSelect.addEventListener('change', () => {
+      const nextType = getSceneTypeFromValue(sceneTypeSelect.value);
+      updateSceneTypeUI(nextType);
+      handleFormInputChange();
+    });
+  }
+
   backgroundSelect.addEventListener('change', handleFormInputChange);
   layoutSelect.addEventListener('change', handleLayoutSelectionChange);
+
+  if (videoSelect) {
+    videoSelect.addEventListener('change', handleFormInputChange);
+  }
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const scene = getSceneFromForm();
+
+    if (scene.type === SCENE_TYPE_VIDEO) {
+      if (!scene.video) {
+        statusElement.textContent = 'Sélectionnez une vidéo avant de diffuser.';
+        return;
+      }
+
+      statusElement.textContent = 'Diffusion de la vidéo…';
+      socket.emit('scene:display', scene);
+      return;
+    }
 
     if (!scene.background) {
       statusElement.textContent = 'Sélectionnez un décor avant de diffuser.';
@@ -1341,9 +1578,21 @@ const handleSceneUpdate = (scene) => {
     second: '2-digit'
   }).format(updatedAt);
 
-  const layoutLabel =
-    layoutsById[currentScene?.layout ?? scene?.layout ?? '']?.label ||
-    `${currentScene?.left?.length ?? 0} vs ${currentScene?.right?.length ?? 0}`;
+  const sceneType = getSceneTypeFromValue(scene?.type);
+
+  if (sceneType === SCENE_TYPE_VIDEO) {
+    const selectedVideoId = currentScene?.video ?? scene?.video ?? '';
+    const videoAsset = selectedVideoId ? videoTracksById[selectedVideoId] : null;
+    const label = videoAsset?.name ? `Vidéo « ${videoAsset.name} »` : 'Scène vidéo';
+    statusElement.textContent = `${label} diffusée (${formattedTime})`;
+    return;
+  }
+
+  const layoutId = currentScene?.layout ?? scene?.layout ?? '';
+  const layout = layoutsById[layoutId];
+  const currentLeft = Array.isArray(currentScene?.left) ? currentScene.left : [];
+  const currentRight = Array.isArray(currentScene?.right) ? currentScene.right : [];
+  const layoutLabel = layout?.label || `${currentLeft.length} vs ${currentRight.length}`;
 
   statusElement.textContent = `Scène ${layoutLabel} diffusée (${formattedTime})`;
 };
@@ -1362,29 +1611,38 @@ const handleLibraryUpdate = (nextLibrary) => {
   const nextAudioTracks = Array.isArray(nextLibrary.audioTracks)
     ? nextLibrary.audioTracks
     : audioTracks;
+  const nextVideoTracks = Array.isArray(nextLibrary.videoTracks)
+    ? nextLibrary.videoTracks
+    : videoTracks;
 
   backgrounds = nextBackgrounds;
   characters = nextCharacters;
   audioTracks = nextAudioTracks;
+  videoTracks = nextVideoTracks;
 
   backgroundsById = Object.fromEntries(backgrounds.map((item) => [item.id, item]));
   charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
   audioTracksById = Object.fromEntries(audioTracks.map((item) => [item.id, item]));
+  videoTracksById = Object.fromEntries(videoTracks.map((item) => [item.id, item]));
 
   const preservedScene = getSceneFromForm();
+  const preservedLeft = Array.isArray(preservedScene.left) ? preservedScene.left : [];
+  const preservedRight = Array.isArray(preservedScene.right) ? preservedScene.right : [];
 
   populateSelect(backgroundSelect, backgrounds);
+  populateVideoSelect(videoSelect, videoTracks);
   populateAudioSelect(audioSelect, audioTracks);
   applyAudioMixLocally(currentAudioMix);
+  updateVideoSelectAvailability();
 
   leftSelectElements.forEach((slot, index) => {
-    const previousValue = preservedScene.left[index] ?? null;
+    const previousValue = preservedLeft[index] ?? null;
     populateSelect(slot.characterSelect, characters, { includeEmpty: true });
     applySlotValue(slot, previousValue);
   });
 
   rightSelectElements.forEach((slot, index) => {
-    const previousValue = preservedScene.right[index] ?? null;
+    const previousValue = preservedRight[index] ?? null;
     populateSelect(slot.characterSelect, characters, { includeEmpty: true });
     applySlotValue(slot, previousValue);
   });
@@ -1394,6 +1652,15 @@ const handleLibraryUpdate = (nextLibrary) => {
     : backgrounds[0]?.id ?? '';
 
   backgroundSelect.value = backgroundValue;
+
+  if (videoSelect) {
+    const videoValue = preservedScene.video && videoTracksById[preservedScene.video]
+      ? preservedScene.video
+      : '';
+    videoSelect.value = videoValue;
+  }
+
+  updateSceneTypeUI(getSceneTypeFromValue(sceneTypeSelect?.value));
 
   currentScene = getSceneFromForm();
   renderPreview(currentScene);
@@ -1419,6 +1686,7 @@ const initialise = async () => {
   characters = library.characters ?? [];
   layouts = library.layouts ?? [];
   audioTracks = library.audioTracks ?? [];
+  videoTracks = library.videoTracks ?? [];
 
   if (!layouts.length) {
     layouts = [{ id: '2v3', label: '2 vs 3', left: 2, right: 3 }];
@@ -1428,14 +1696,21 @@ const initialise = async () => {
   charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
   layoutsById = Object.fromEntries(layouts.map((item) => [item.id, item]));
   audioTracksById = Object.fromEntries(audioTracks.map((item) => [item.id, item]));
+  videoTracksById = Object.fromEntries(videoTracks.map((item) => [item.id, item]));
 
   populateSelect(layoutSelect, layouts);
   populateSelect(backgroundSelect, backgrounds);
+  populateVideoSelect(videoSelect, videoTracks);
   populateAudioSelect(audioSelect, audioTracks);
   applyAudioMixLocally(audioData.mix);
+  updateVideoSelectAvailability();
 
   attachFormListeners();
   updateAudioControlsAvailability();
+
+  if (sceneTypeSelect) {
+    updateSceneTypeUI(getSceneTypeFromValue(sceneTypeSelect.value));
+  }
 
   socket = io();
   socket.on('scene:update', handleSceneUpdate);

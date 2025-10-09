@@ -51,6 +51,10 @@ const sceneLayouts = [
   { id: '3v3', label: '3 vs 3', left: 3, right: 3 }
 ];
 
+const SCENE_TYPE_CHARACTER = 'character';
+const SCENE_TYPE_VIDEO = 'video';
+const VALID_SCENE_TYPES = new Set([SCENE_TYPE_CHARACTER, SCENE_TYPE_VIDEO]);
+
 const defaultCharacters = [];
 
 const safeReadJson = (filePath) => {
@@ -513,6 +517,7 @@ const defaultScene = () => {
   const backgroundOption = backgrounds[0]?.id ?? null;
 
   return {
+    type: SCENE_TYPE_CHARACTER,
     background: backgroundOption,
     layout: layout.id,
     right: withDefaultOrientation(selectCharacters(layout.right, 0)),
@@ -729,7 +734,36 @@ const normaliseScene = (scene) => {
     return null;
   }
 
+  const requestedType = VALID_SCENE_TYPES.has(scene.type)
+    ? scene.type
+    : SCENE_TYPE_CHARACTER;
+
+  if (requestedType === SCENE_TYPE_VIDEO) {
+    const videoId = (scene.video || '').toString();
+
+    if (!videoId) {
+      return null;
+    }
+
+    const track = tracksById[videoId];
+
+    if (!track || detectTrackKind(track) !== 'video') {
+      return null;
+    }
+
+    return {
+      type: SCENE_TYPE_VIDEO,
+      video: track.id,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
   const background = backgroundsById[scene.background]?.id ?? null;
+
+  if (!background) {
+    return null;
+  }
+
   const leftInput = Array.isArray(scene.left) ? scene.left : [];
   const rightInput = Array.isArray(scene.right) ? scene.right : [];
 
@@ -783,11 +817,8 @@ const normaliseScene = (scene) => {
     });
   };
 
-  if (!background) {
-    return null;
-  }
-
   return {
+    type: SCENE_TYPE_CHARACTER,
     background,
     layout: layout.id,
     left: sanitiseSlot(leftInput, layout.left),

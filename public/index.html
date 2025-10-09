@@ -50,6 +50,17 @@
       </div>
     </div>
     <section class="scene scene--player" id="scene">
+      <div class="scene__video-container" id="scene-video-container" hidden>
+        <video
+          class="scene__video"
+          id="scene-video"
+          playsinline
+          preload="auto"
+        ></video>
+        <p class="scene__video-placeholder" id="scene-video-placeholder">
+          Aucune vidéo en cours de diffusion.
+        </p>
+      </div>
       <div class="scene__overlay">
         <div class="scene__column scene__column--left" id="left-column"></div>
         <div class="scene__column scene__column--right" id="right-column"></div>
