@@ -12,6 +12,104 @@ let latestAudioMix = { tracks: [] };
 const audioPlayers = new Map();
 const AUDIO_SEEK_THRESHOLD = 0.25;
 
+const audioUnlockState = {
+  unlocked: false,
+  requested: false,
+  prompt: null,
+  pointerHandler: null
+};
+
+const hideAudioUnlockPrompt = () => {
+  if (audioUnlockState.pointerHandler) {
+    window.removeEventListener('pointerdown', audioUnlockState.pointerHandler);
+    audioUnlockState.pointerHandler = null;
+  }
+
+  if (audioUnlockState.prompt) {
+    audioUnlockState.prompt.hidden = true;
+    audioUnlockState.prompt.setAttribute('aria-hidden', 'true');
+  }
+
+  audioUnlockState.requested = false;
+};
+
+const markAudioUnlocked = () => {
+  if (audioUnlockState.unlocked) {
+    return;
+  }
+
+  audioUnlockState.unlocked = true;
+  hideAudioUnlockPrompt();
+};
+
+const unlockAudioPlayback = () => {
+  const players = Array.from(audioPlayers.values());
+
+  if (!players.length) {
+    markAudioUnlocked();
+    return;
+  }
+
+  players.forEach((player) => {
+    const { audio, desiredVolume } = player;
+
+    try {
+      audio.muted = false;
+      if (Number.isFinite(desiredVolume)) {
+        audio.volume = desiredVolume;
+      }
+
+      const playResult = audio.play();
+
+      if (playResult && typeof playResult.then === 'function') {
+        playResult.catch(() => {
+          /* Ignore unlock errors to avoid breaking other players. */
+        });
+      }
+    } catch (error) {
+      /* Intentionally ignore playback errors during unlock attempts. */
+    }
+  });
+
+  markAudioUnlocked();
+};
+
+const requestAudioUnlock = () => {
+  if (audioUnlockState.unlocked) {
+    return;
+  }
+
+  if (!audioUnlockState.prompt) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'audio-unlock';
+    button.textContent = 'Activer le son';
+    button.hidden = true;
+    button.setAttribute('aria-hidden', 'true');
+    button.addEventListener('click', unlockAudioPlayback);
+    document.body.appendChild(button);
+    audioUnlockState.prompt = button;
+  }
+
+  if (!audioUnlockState.requested) {
+    audioUnlockState.requested = true;
+
+    if (audioUnlockState.prompt) {
+      audioUnlockState.prompt.hidden = false;
+      audioUnlockState.prompt.removeAttribute('aria-hidden');
+    }
+
+    if (!audioUnlockState.pointerHandler) {
+      audioUnlockState.pointerHandler = () => {
+        audioUnlockState.pointerHandler = null;
+        unlockAudioPlayback();
+      };
+
+      window.addEventListener('pointerdown', audioUnlockState.pointerHandler, { once: true });
+    }
+  }
+};
+
 const createAudioPlayer = (source) => {
   const audioElement = new Audio(source);
   audioElement.preload = 'auto';
@@ -20,7 +118,8 @@ const createAudioPlayer = (source) => {
     audio: audioElement,
     source,
     pendingSeek: null,
-    lastPosition: undefined
+    lastPosition: undefined,
+    desiredVolume: 1
   };
 
   audioElement.addEventListener('loadedmetadata', () => {
@@ -59,6 +158,7 @@ const ensureAudioPlayer = (id, source) => {
     player.source = source;
     player.pendingSeek = null;
     player.lastPosition = undefined;
+    player.desiredVolume = 1;
 
     try {
       player.audio.currentTime = 0;
@@ -356,6 +456,7 @@ const stopAudioPlayer = (player) => {
 
   player.pendingSeek = null;
   player.lastPosition = undefined;
+  player.desiredVolume = 1;
 };
 
 const applyAudioMix = (mix) => {
@@ -381,7 +482,8 @@ const applyAudioMix = (mix) => {
     const { audio } = player;
 
     audio.loop = Boolean(track.loop);
-    audio.volume = track.volume ?? 1;
+    const desiredVolume = Number.isFinite(track.volume) ? track.volume : 1;
+    player.desiredVolume = desiredVolume;
 
     if (Number.isFinite(track.position) && track.position >= 0) {
       seekAudioPlayer(player, track.position);
@@ -390,14 +492,48 @@ const applyAudioMix = (mix) => {
     const shouldPlay = track.playing === false ? false : true;
 
     if (shouldPlay) {
-      if (audio.paused || audio.ended) {
-        if (audio.ended || (audio.duration && audio.currentTime >= audio.duration)) {
-          seekAudioPlayer(player, 0);
+      audio.muted = false;
+
+      if (audio.ended || (audio.duration && audio.currentTime >= audio.duration)) {
+        seekAudioPlayer(player, 0);
+      }
+
+      if (audio.paused) {
+        audio.volume = 0;
+
+        let playResult = null;
+
+        try {
+          playResult = audio.play();
+        } catch (error) {
+          audio.volume = desiredVolume;
+
+          if (error?.name === 'NotAllowedError' || error?.name === 'NotSupportedError') {
+            requestAudioUnlock();
+          }
+
+          return;
         }
 
-        audio.play().catch(() => {
-          /* Autoplay might be blocked; ignore rejection. */
-        });
+        if (playResult && typeof playResult.then === 'function') {
+          playResult
+            .then(() => {
+              audio.volume = desiredVolume;
+              markAudioUnlocked();
+            })
+            .catch((error) => {
+              audio.volume = desiredVolume;
+
+              if (error?.name === 'NotAllowedError' || error?.name === 'NotSupportedError') {
+                requestAudioUnlock();
+              }
+            });
+        } else {
+          audio.volume = desiredVolume;
+          markAudioUnlocked();
+        }
+      } else {
+        audio.volume = desiredVolume;
       }
     } else if (!audio.paused) {
       audio.pause();
@@ -412,6 +548,9 @@ const applyAudioMix = (mix) => {
   });
 
   latestAudioMix = { tracks };
+  if (tracks.length === 0) {
+    hideAudioUnlockPrompt();
+  }
   return latestAudioMix;
 };
 

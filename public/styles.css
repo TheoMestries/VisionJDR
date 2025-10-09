@@ -147,6 +147,36 @@ main.layout {
   padding: 0;
 }
 
+.audio-unlock {
+  position: fixed;
+  left: 50%;
+  bottom: clamp(1.5rem, 4vh, 3rem);
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.9);
+  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: var(--radius-small);
+  padding: 0.9rem 1.9rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: var(--shadow-elevated);
+  transition: transform var(--transition), box-shadow var(--transition),
+    background var(--transition);
+  z-index: 1000;
+}
+
+.audio-unlock:hover {
+  transform: translateX(-50%) translateY(-2px);
+  background: rgba(30, 41, 59, 0.95);
+}
+
+.audio-unlock:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.75);
+  outline-offset: 3px;
+}
+
 .scene--preview {
   min-height: clamp(140px, 22vh, 220px);
   --scene-min-height: 0px;
