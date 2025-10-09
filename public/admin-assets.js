@@ -203,11 +203,19 @@ const createAssetCard = (asset, type) => {
     image.alt = asset.name || (type === 'character' ? 'Personnage' : 'Décor');
     preview.appendChild(image);
   } else if (isTrackType(type)) {
+    item.classList.add('asset-card--track');
     preview.classList.add('asset-card__preview--track');
+    const mediaKind = trackMediaKind || trackStorage;
+
+    if (mediaKind === 'video') {
+      item.classList.add('asset-card--video');
+      preview.classList.add('asset-card__preview--video');
+    } else if (mediaKind === 'audio') {
+      item.classList.add('asset-card--audio');
+      preview.classList.add('asset-card__preview--audio');
+    }
 
     if (asset.file) {
-      const mediaKind = trackMediaKind || trackStorage;
-
       if (mediaKind === 'video') {
         const video = document.createElement('video');
         video.src = asset.file;
