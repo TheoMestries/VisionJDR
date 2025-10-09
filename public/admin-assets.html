@@ -28,6 +28,34 @@
       </header>
 
       <section class="admin-panel admin-panel--assets">
+        <section class="campaign-toolbar" aria-label="Gestion des campagnes">
+          <div class="campaign-toolbar__select">
+            <label class="field">
+              <span class="field__label">Campagne active</span>
+              <select id="campaign-select" name="campaign-select"></select>
+            </label>
+          </div>
+
+          <form id="campaign-create-form" class="campaign-toolbar__form" autocomplete="off">
+            <div class="campaign-toolbar__row">
+              <label class="field campaign-toolbar__field">
+                <span class="field__label">Nouvelle campagne</span>
+                <input
+                  type="text"
+                  id="campaign-name"
+                  name="name"
+                  placeholder="Ex. Chroniques de l'aube"
+                  required
+                />
+              </label>
+              <div class="form__actions campaign-toolbar__actions">
+                <button class="button" type="submit">Créer</button>
+                <span class="form__status" id="campaign-create-status" role="status"></span>
+              </div>
+            </div>
+          </form>
+        </section>
+
         <form
           id="character-upload-form"
           class="admin-form admin-form--upload"

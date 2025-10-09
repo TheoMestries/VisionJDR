@@ -12,8 +12,137 @@ const characterCount = document.getElementById('character-count');
 const backgroundCount = document.getElementById('background-count');
 const trackCount = document.getElementById('track-count');
 const videoCount = document.getElementById('video-count');
+const campaignSelect = document.getElementById('campaign-select');
+const campaignCreateForm = document.getElementById('campaign-create-form');
+const campaignNameInput = document.getElementById('campaign-name');
+const campaignCreateStatus = document.getElementById('campaign-create-status');
 
-let library = { backgrounds: [], characters: [], tracks: [], audioTracks: [], videoTracks: [] };
+let library = {
+  backgrounds: [],
+  characters: [],
+  tracks: [],
+  audioTracks: [],
+  videoTracks: [],
+  campaigns: []
+};
+
+let campaigns = [];
+let campaignsById = {};
+let selectedCampaignId = null;
+
+const CAMPAIGN_STORAGE_KEY = 'visionjdr.selectedCampaign';
+
+const readStoredCampaignId = () => {
+  try {
+    return window.localStorage?.getItem(CAMPAIGN_STORAGE_KEY) || null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const storeSelectedCampaignId = (campaignId) => {
+  try {
+    if (campaignId) {
+      window.localStorage?.setItem(CAMPAIGN_STORAGE_KEY, campaignId);
+    } else {
+      window.localStorage?.removeItem(CAMPAIGN_STORAGE_KEY);
+    }
+  } catch (error) {
+    // Ignore storage errors.
+  }
+};
+
+const matchesCampaign = (asset, campaignId) => {
+  if (!campaignId) {
+    return true;
+  }
+
+  const assetCampaignId = (asset?.campaignId || '').toString();
+
+  return !assetCampaignId || assetCampaignId === campaignId;
+};
+
+const filterAssetsByCampaign = (assets, campaignId) => {
+  if (!Array.isArray(assets)) {
+    return [];
+  }
+
+  return assets.filter((item) => matchesCampaign(item, campaignId));
+};
+
+const updateCampaignSelectOptions = () => {
+  if (!campaignSelect) {
+    return selectedCampaignId;
+  }
+
+  campaignSelect.innerHTML = '';
+
+  campaigns.forEach((campaign) => {
+    const option = document.createElement('option');
+    option.value = campaign.id;
+    option.textContent = campaign.name;
+    campaignSelect.appendChild(option);
+  });
+
+  if (selectedCampaignId && campaignsById[selectedCampaignId]) {
+    campaignSelect.value = selectedCampaignId;
+    return selectedCampaignId;
+  }
+
+  if (campaignSelect.options.length > 0) {
+    campaignSelect.selectedIndex = 0;
+    return campaignSelect.value || null;
+  }
+
+  campaignSelect.value = '';
+  return null;
+};
+
+const renderAssetsForCurrentCampaign = () => {
+  const filter = (assets) => filterAssetsByCampaign(assets, selectedCampaignId);
+
+  const characters = filter(library.characters);
+  const backgrounds = filter(library.backgrounds);
+  let audioTracks = filter(library.audioTracks);
+  let videoTracks = filter(library.videoTracks);
+  const allTracks = Array.isArray(library.tracks) ? library.tracks : [];
+
+  if (!audioTracks.length && !videoTracks.length && allTracks.length) {
+    const filteredTracks = filter(allTracks);
+    const splitted = splitTracksByMediaKind(filteredTracks);
+    audioTracks = splitted.audio;
+    videoTracks = splitted.video;
+  }
+
+  renderAssetList(characterList, characters, 'character', characterCount);
+  renderAssetList(backgroundList, backgrounds, 'background', backgroundCount);
+  renderAssetList(trackList, audioTracks, 'track-audio', trackCount, {
+    emptyMessage: defaultEmptyMessages['track-audio']
+  });
+  renderAssetList(videoList, videoTracks, 'track-video', videoCount, {
+    emptyMessage: defaultEmptyMessages['track-video']
+  });
+};
+
+const setSelectedCampaign = (campaignId, { refresh = true, skipStorage = false } = {}) => {
+  const validId = campaignId && campaignsById[campaignId]
+    ? campaignId
+    : campaigns[0]?.id ?? null;
+
+  selectedCampaignId = validId;
+
+  if (!skipStorage) {
+    storeSelectedCampaignId(selectedCampaignId);
+  }
+
+  if (campaignSelect) {
+    campaignSelect.value = selectedCampaignId ?? '';
+  }
+
+  if (refresh) {
+    renderAssetsForCurrentCampaign();
+  }
+};
 
 const statusByType = {
   character: characterStatus,
@@ -781,31 +910,49 @@ const refreshLibrary = async () => {
     throw new Error("Impossible de charger la médiathèque.");
   }
 
-  library = await response.json();
+  const data = await response.json();
 
-  const characters = Array.isArray(library.characters) ? library.characters : [];
-  const backgrounds = Array.isArray(library.backgrounds) ? library.backgrounds : [];
-  const tracks = Array.isArray(library.tracks) ? library.tracks : [];
-  let audioTracks = Array.isArray(library.audioTracks) ? library.audioTracks : [];
-  let videoTracks = Array.isArray(library.videoTracks) ? library.videoTracks : [];
+  library = {
+    backgrounds: Array.isArray(data.backgrounds) ? data.backgrounds : [],
+    characters: Array.isArray(data.characters) ? data.characters : [],
+    tracks: Array.isArray(data.tracks) ? data.tracks : [],
+    audioTracks: Array.isArray(data.audioTracks) ? data.audioTracks : [],
+    videoTracks: Array.isArray(data.videoTracks) ? data.videoTracks : [],
+    campaigns: Array.isArray(data.campaigns) ? data.campaigns : []
+  };
 
-  if (!audioTracks.length && !videoTracks.length && tracks.length) {
-    const splitted = splitTracksByMediaKind(tracks);
-    audioTracks = splitted.audio;
-    videoTracks = splitted.video;
+  if (!library.audioTracks.length && !library.videoTracks.length && library.tracks.length) {
+    const splitted = splitTracksByMediaKind(library.tracks);
+    library.audioTracks = splitted.audio;
+    library.videoTracks = splitted.video;
   }
 
-  library.audioTracks = audioTracks;
-  library.videoTracks = videoTracks;
+  campaigns = library.campaigns;
+  campaignsById = Object.fromEntries(campaigns.map((item) => [item.id, item]));
 
-  renderAssetList(characterList, characters, 'character', characterCount);
-  renderAssetList(backgroundList, backgrounds, 'background', backgroundCount);
-  renderAssetList(trackList, audioTracks, 'track-audio', trackCount, {
-    emptyMessage: defaultEmptyMessages['track-audio']
-  });
-  renderAssetList(videoList, videoTracks, 'track-video', videoCount, {
-    emptyMessage: defaultEmptyMessages['track-video']
-  });
+  if (selectedCampaignId && !campaignsById[selectedCampaignId]) {
+    selectedCampaignId = null;
+  }
+
+  if (!selectedCampaignId) {
+    const stored = readStoredCampaignId();
+
+    if (stored && campaignsById[stored]) {
+      selectedCampaignId = stored;
+    } else {
+      selectedCampaignId = campaigns[0]?.id ?? null;
+    }
+  }
+
+  const resolvedCampaign = updateCampaignSelectOptions();
+
+  if (resolvedCampaign !== null) {
+    selectedCampaignId = resolvedCampaign;
+  }
+
+  storeSelectedCampaignId(selectedCampaignId);
+
+  renderAssetsForCurrentCampaign();
 };
 
 const deleteAsset = async (type, assetId, buttonElement) => {
@@ -904,6 +1051,14 @@ const handleUpload = (formElement, endpoint, statusElement, successMessage = 'M�
     const submitButton = formElement.querySelector('button[type="submit"]');
     const formData = new FormData(formElement);
 
+    if (!selectedCampaignId) {
+      setStatus(statusElement, 'Sélectionnez une campagne avant de téléverser un média.', 'error');
+      clearStatusLater(statusElement);
+      return;
+    }
+
+    formData.set('campaignId', selectedCampaignId);
+
     setStatus(statusElement, 'Téléversement en cours…', 'pending');
     if (submitButton) {
       submitButton.disabled = true;
@@ -941,6 +1096,74 @@ const handleUpload = (formElement, endpoint, statusElement, successMessage = 'M�
 handleUpload(characterForm, '/api/assets/characters', characterStatus, 'Personnage enregistré avec succès !');
 handleUpload(backgroundForm, '/api/assets/backgrounds', backgroundStatus, 'Décor enregistré avec succès !');
 handleUpload(trackForm, '/api/assets/tracks', trackStatus, 'Piste enregistrée avec succès !');
+
+if (campaignSelect) {
+  campaignSelect.addEventListener('change', () => {
+    setSelectedCampaign(campaignSelect.value || null);
+  });
+}
+
+if (campaignCreateForm) {
+  campaignCreateForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const name = campaignNameInput ? campaignNameInput.value.trim() : '';
+
+    if (!name) {
+      setStatus(campaignCreateStatus, 'Indiquez un nom de campagne.', 'error');
+      clearStatusLater(campaignCreateStatus);
+      return;
+    }
+
+    const submitButton = campaignCreateForm.querySelector('button[type="submit"]');
+
+    setStatus(campaignCreateStatus, 'Création en cours…', 'pending');
+
+    if (submitButton) {
+      submitButton.disabled = true;
+    }
+
+    try {
+      const response = await fetch('/api/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const message = errorData?.error || 'Impossible de créer la campagne.';
+        setStatus(campaignCreateStatus, message, 'error');
+        clearStatusLater(campaignCreateStatus);
+        return;
+      }
+
+      const data = await response.json();
+      const campaign = data?.campaign;
+
+      if (campaign?.id) {
+        selectedCampaignId = campaign.id;
+        storeSelectedCampaignId(selectedCampaignId);
+      }
+
+      if (campaignNameInput) {
+        campaignNameInput.value = '';
+      }
+
+      setStatus(campaignCreateStatus, 'Campagne créée avec succès !', 'success');
+      clearStatusLater(campaignCreateStatus);
+
+      await refreshLibrary();
+    } catch (error) {
+      setStatus(campaignCreateStatus, "Une erreur réseau est survenue.", 'error');
+      clearStatusLater(campaignCreateStatus);
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+      }
+    }
+  });
+}
 
 if (characterList) {
   characterList.addEventListener('click', handleAssetListClick);

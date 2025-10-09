@@ -453,6 +453,47 @@ main.layout {
   grid-column: 1 / -1;
 }
 
+.campaign-toolbar {
+  grid-column: 1 / -1;
+  background: var(--bg-panel-strong);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-large);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-elevated);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-end;
+}
+
+.campaign-toolbar__select {
+  flex: 1 1 260px;
+  min-width: 220px;
+}
+
+.campaign-toolbar__form {
+  flex: 2 1 320px;
+}
+
+.campaign-toolbar__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.campaign-toolbar__field {
+  flex: 1 1 260px;
+  min-width: 220px;
+}
+
+.campaign-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
 .admin-form {
   background: var(--bg-panel-strong);
   border: 1px solid var(--border-soft);

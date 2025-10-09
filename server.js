@@ -78,6 +78,36 @@ const slugify = (value) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '') || 'element';
 
+const randomSuffix = () => crypto.randomBytes(4).toString('hex');
+
+const createCampaignId = (name) => {
+  const base = slugify(name || 'campagne');
+  const timestamp = Date.now().toString(36);
+  return `campaign-${base}-${timestamp}-${randomSuffix()}`;
+};
+
+const createCampaign = (name) => ({
+  id: createCampaignId(name),
+  name: name && name.trim() ? name.trim() : 'Campagne sans nom',
+  createdAt: new Date().toISOString()
+});
+
+const normaliseCampaign = (campaign) => {
+  if (!campaign || typeof campaign !== 'object') {
+    return null;
+  }
+
+  const name = (campaign.name || '').toString().trim() || 'Campagne sans nom';
+  const rawId = (campaign.id || '').toString().trim();
+  const id = rawId || createCampaignId(name);
+  const createdAtDate = campaign.createdAt ? new Date(campaign.createdAt) : null;
+  const createdAt = createdAtDate && !Number.isNaN(createdAtDate.valueOf())
+    ? createdAtDate.toISOString()
+    : new Date().toISOString();
+
+  return { id, name, createdAt };
+};
+
 const detectTrackStorage = (track) => {
   if (!track || typeof track !== 'object') {
     return null;
@@ -171,36 +201,131 @@ const normaliseTrack = (track) => {
 
 const loadCustomLibrary = () => {
   const stored = safeReadJson(LIBRARY_FILE);
+  let needsPersist = false;
 
   if (!stored) {
-    return { backgrounds: [], characters: [], tracks: [] };
+    const defaultCampaign = createCampaign('Campagne principale');
+
+    return {
+      library: {
+        campaigns: [defaultCampaign],
+        backgrounds: [],
+        characters: [],
+        tracks: []
+      },
+      needsPersist: true
+    };
   }
 
+  const campaignsInput = Array.isArray(stored.campaigns) ? stored.campaigns : [];
+  const seenCampaignIds = new Set();
+  const campaigns = [];
+
+  campaignsInput.forEach((entry) => {
+    const normalised = normaliseCampaign(entry);
+
+    if (!normalised || seenCampaignIds.has(normalised.id)) {
+      needsPersist = true;
+      return;
+    }
+
+    const originalId = (entry?.id || '').toString().trim();
+    const originalName = (entry?.name || '').toString().trim();
+
+    if (normalised.id !== originalId || normalised.name !== originalName) {
+      needsPersist = true;
+    }
+
+    campaigns.push(normalised);
+    seenCampaignIds.add(normalised.id);
+  });
+
+  if (!campaigns.length) {
+    campaigns.push(createCampaign('Campagne principale'));
+    needsPersist = true;
+  }
+
+  const validCampaignIds = new Set(campaigns.map((campaign) => campaign.id));
+
+  const normaliseAssetWithCampaign = (asset) => {
+    if (!asset || typeof asset !== 'object') {
+      needsPersist = true;
+      return null;
+    }
+
+    const inputCampaignId = (asset.campaignId || '').toString().trim();
+    const campaignId = inputCampaignId && validCampaignIds.has(inputCampaignId)
+      ? inputCampaignId
+      : null;
+
+    if (campaignId !== inputCampaignId) {
+      needsPersist = true;
+    }
+
+    return { ...asset, campaignId };
+  };
+
+  const normaliseAssetCollection = (collection) => {
+    if (!Array.isArray(collection)) {
+      if (collection && typeof collection === 'object' && Object.keys(collection).length) {
+        needsPersist = true;
+      }
+
+      return [];
+    }
+
+    const result = [];
+
+    collection.forEach((item) => {
+      const normalised = normaliseAssetWithCampaign(item);
+
+      if (normalised) {
+        result.push(normalised);
+      }
+    });
+
+    return result;
+  };
+
+  const backgrounds = normaliseAssetCollection(stored.backgrounds);
+  const characters = normaliseAssetCollection(stored.characters);
+  const tracks = Array.isArray(stored.tracks)
+    ? stored.tracks
+        .map(normaliseTrack)
+        .filter((track) => track !== null)
+        .map(normaliseAssetWithCampaign)
+        .filter((track) => track !== null)
+    : [];
+
   return {
-    backgrounds: Array.isArray(stored.backgrounds) ? stored.backgrounds : [],
-    characters: Array.isArray(stored.characters) ? stored.characters : [],
-    tracks: Array.isArray(stored.tracks)
-      ? stored.tracks
-          .map(normaliseTrack)
-          .filter((track) => track !== null)
-      : []
+    library: { campaigns, backgrounds, characters, tracks },
+    needsPersist
   };
 };
 
-let customLibrary = loadCustomLibrary();
+const { library: initialLibrary, needsPersist: libraryNeedsPersist } = loadCustomLibrary();
+let customLibrary = initialLibrary;
+
+if (libraryNeedsPersist) {
+  writeJson(LIBRARY_FILE, customLibrary);
+}
+
 let backgrounds = [];
 let characters = [];
 let backgroundsById = {};
 let charactersById = {};
 let tracks = [];
 let tracksById = {};
+let campaigns = [];
+let campaignsById = {};
 let library = {
   backgrounds: [],
   characters: [],
   tracks: [],
   audioTracks: [],
   videoTracks: [],
-  layouts: []
+  layouts: [],
+  campaigns: []
 };
 let currentAudioMix = { tracks: [] };
 
@@ -313,10 +438,94 @@ const splitTracksByKind = (collection) => {
 };
 
 const refreshLibrary = () => {
-  backgrounds = [...defaultBackgrounds, ...(customLibrary.backgrounds ?? [])];
-  characters = [...defaultCharacters, ...(customLibrary.characters ?? [])];
-  tracks = [...(customLibrary.tracks ?? [])].map(normaliseTrack).filter(Boolean);
-  customLibrary.tracks = [...tracks];
+  let shouldPersistCampaigns = false;
+
+  let shouldPersistLibrary = false;
+
+  if (!Array.isArray(customLibrary.campaigns)) {
+    customLibrary.campaigns = [createCampaign('Campagne principale')];
+    shouldPersistCampaigns = true;
+  } else if (!customLibrary.campaigns.length) {
+    customLibrary.campaigns.push(createCampaign('Campagne principale'));
+    shouldPersistCampaigns = true;
+  }
+
+  campaigns = [...customLibrary.campaigns];
+  campaignsById = Object.fromEntries(campaigns.map((item) => [item.id, item]));
+
+  const normaliseCampaignAttachment = (entry) => {
+    if (!entry || typeof entry !== 'object') {
+      shouldPersistLibrary = true;
+      return null;
+    }
+
+    const rawCampaignId = (entry.campaignId || '').toString().trim();
+    const campaignId = rawCampaignId && campaignsById[rawCampaignId] ? rawCampaignId : null;
+
+    if (campaignId !== entry.campaignId) {
+      shouldPersistLibrary = true;
+    }
+
+    return { ...entry, campaignId };
+  };
+
+  const sanitiseCollection = (collection) => {
+    if (!Array.isArray(collection)) {
+      if (collection && collection.length) {
+        shouldPersistLibrary = true;
+      }
+      return [];
+    }
+
+    const result = [];
+
+    collection.forEach((item) => {
+      const normalised = normaliseCampaignAttachment(item);
+
+      if (normalised) {
+        result.push(normalised);
+      } else {
+        shouldPersistLibrary = true;
+      }
+    });
+
+    return result;
+  };
+
+  const defaultBackgroundList = defaultBackgrounds.map((item) => ({
+    ...item,
+    campaignId: item?.campaignId ?? null
+  }));
+  const defaultCharacterList = defaultCharacters.map((item) => ({
+    ...item,
+    campaignId: item?.campaignId ?? null
+  }));
+
+  const customBackgrounds = sanitiseCollection(customLibrary.backgrounds);
+  const customCharacters = sanitiseCollection(customLibrary.characters);
+  const customTracks = Array.isArray(customLibrary.tracks)
+    ? customLibrary.tracks
+        .map((track) => {
+          const normalised = normaliseTrack(track);
+
+          if (!normalised) {
+            shouldPersistLibrary = true;
+          }
+
+          return normalised;
+        })
+        .filter((track) => track !== null)
+        .map(normaliseCampaignAttachment)
+        .filter((track) => track !== null)
+    : [];
+
+  customLibrary.backgrounds = customBackgrounds;
+  customLibrary.characters = customCharacters;
+  customLibrary.tracks = customTracks;
+
+  backgrounds = [...defaultBackgroundList, ...customBackgrounds];
+  characters = [...defaultCharacterList, ...customCharacters];
+  tracks = [...customTracks];
 
   backgroundsById = Object.fromEntries(backgrounds.map((item) => [item.id, item]));
   charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
@@ -328,8 +537,15 @@ const refreshLibrary = () => {
     tracks,
     audioTracks: audio,
     videoTracks: video,
-    layouts: sceneLayouts
+    layouts: sceneLayouts,
+    campaigns
   };
+
+  shouldPersistLibrary = shouldPersistLibrary || shouldPersistCampaigns;
+
+  if (shouldPersistLibrary) {
+    writeJson(LIBRARY_FILE, customLibrary);
+  }
 
   const previousMix = currentAudioMix;
   const normalisedMix = normaliseAudioMix(previousMix);
@@ -347,8 +563,6 @@ const persistCustomLibrary = () => {
 };
 
 refreshLibrary();
-
-const randomSuffix = () => crypto.randomBytes(4).toString('hex');
 
 const createAssetId = (prefix, name) => {
   const base = slugify(name);
@@ -549,6 +763,39 @@ app.get('/api/library', (req, res) => {
   res.json(library);
 });
 
+app.get('/api/campaigns', (req, res) => {
+  res.json({ campaigns });
+});
+
+app.post('/api/campaigns', (req, res) => {
+  const nameInput = (req.body?.name || '').toString().trim();
+
+  if (!nameInput) {
+    res.status(400).json({ error: 'Le nom de la campagne est requis.' });
+    return;
+  }
+
+  const normalisedName = nameInput.replace(/\s+/g, ' ').trim();
+  const duplicate = campaigns.find(
+    (campaign) => campaign.name.toLowerCase() === normalisedName.toLowerCase()
+  );
+
+  if (duplicate) {
+    res.status(400).json({ error: 'Une campagne portant ce nom existe déjà.' });
+    return;
+  }
+
+  const campaign = createCampaign(normalisedName);
+  const collection = ensureCustomCollection('campaigns');
+  collection.push(campaign);
+  persistCustomLibrary();
+  refreshLibrary();
+
+  io.emit('library:update', library);
+
+  res.status(201).json({ campaign });
+});
+
 app.get('/api/audio', (req, res) => {
   res.json({ mix: currentAudioMix });
 });
@@ -562,6 +809,7 @@ app.get('/api/assets/custom', (req, res) => {
     backgrounds: customLibrary.backgrounds ?? [],
     characters: customLibrary.characters ?? [],
     tracks: customLibrary.tracks ?? [],
+    campaigns: customLibrary.campaigns ?? [],
     audioTracks,
     videoTracks
   });
@@ -573,9 +821,15 @@ app.post(
   (req, res) => {
     const uploadedFile = req.file;
     const nameInput = (req.body?.name || '').toString().trim();
+    const campaignId = (req.body?.campaignId || '').toString().trim();
 
     if (!uploadedFile) {
       res.status(400).json({ error: "Aucune image n'a été envoyée." });
+      return;
+    }
+
+    if (!campaignId || !campaignsById[campaignId]) {
+      res.status(400).json({ error: 'Sélectionnez une campagne valide avant d\'ajouter un personnage.' });
       return;
     }
 
@@ -588,7 +842,8 @@ app.post(
       color: '#1e293b',
       image: publicPath,
       origin: 'upload',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      campaignId
     };
 
     if (!Array.isArray(customLibrary.characters)) {
@@ -651,9 +906,15 @@ app.post(
   (req, res) => {
     const uploadedFile = req.file;
     const nameInput = (req.body?.name || '').toString().trim();
+    const campaignId = (req.body?.campaignId || '').toString().trim();
 
     if (!uploadedFile) {
       res.status(400).json({ error: "Aucune image n'a été envoyée." });
+      return;
+    }
+
+    if (!campaignId || !campaignsById[campaignId]) {
+      res.status(400).json({ error: 'Sélectionnez une campagne valide avant d\'ajouter un décor.' });
       return;
     }
 
@@ -667,7 +928,8 @@ app.post(
       background: backgroundStyle,
       image: publicPath,
       origin: 'upload',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      campaignId
     };
 
     if (!Array.isArray(customLibrary.backgrounds)) {
@@ -692,9 +954,15 @@ app.post(
   (req, res) => {
     const uploadedFile = req.file;
     const nameInput = (req.body?.name || '').toString().trim();
+    const campaignId = (req.body?.campaignId || '').toString().trim();
 
     if (!uploadedFile) {
       res.status(400).json({ error: "Aucun fichier média n'a été envoyé." });
+      return;
+    }
+
+    if (!campaignId || !campaignsById[campaignId]) {
+      res.status(400).json({ error: 'Sélectionnez une campagne valide avant d\'ajouter une piste.' });
       return;
     }
 
@@ -710,7 +978,8 @@ app.post(
       mimeType: uploadedFile.mimetype,
       storage: subDirectory,
       origin: 'upload',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      campaignId
     };
 
     const collection = ensureCustomCollection('tracks');
@@ -734,6 +1003,9 @@ const normaliseScene = (scene) => {
     return null;
   }
 
+  const rawCampaignId = (scene.campaign || scene.campaignId || '').toString().trim();
+  const campaignId = rawCampaignId && campaignsById[rawCampaignId] ? rawCampaignId : null;
+
   const requestedType = VALID_SCENE_TYPES.has(scene.type)
     ? scene.type
     : SCENE_TYPE_CHARACTER;
@@ -754,6 +1026,7 @@ const normaliseScene = (scene) => {
     return {
       type: SCENE_TYPE_VIDEO,
       video: track.id,
+      campaign: campaignId,
       updatedAt: new Date().toISOString()
     };
   }
@@ -823,6 +1096,7 @@ const normaliseScene = (scene) => {
     layout: layout.id,
     left: sanitiseSlot(leftInput, layout.left),
     right: sanitiseSlot(rightInput, layout.right),
+    campaign: campaignId,
     updatedAt: new Date().toISOString()
   };
 };
