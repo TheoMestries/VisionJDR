@@ -29,6 +29,11 @@ let previewLayoutFrame = null;
 let audioTracks = [];
 let audioTracksById = {};
 let currentAudioMix = { tracks: [] };
+const adminAudioPlayers = new Map();
+let audioUiFrame = null;
+
+const AUDIO_PROGRESS_STEPS = 1000;
+const AUDIO_SEEK_THRESHOLD = 0.25;
 
 const ORIENTATION_NORMAL = 'normal';
 const ORIENTATION_MIRRORED = 'mirrored';
@@ -336,6 +341,315 @@ const populateAudioSelect = (select, tracks) => {
   });
 };
 
+const formatTimeValue = (value) => {
+  if (!Number.isFinite(value) || value < 0) {
+    return '0:00';
+  }
+
+  const totalSeconds = Math.floor(value);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const minutePart = hours > 0 ? String(minutes).padStart(2, '0') : String(minutes);
+  const prefix = hours > 0 ? `${hours}:${minutePart}` : minutePart;
+
+  return `${prefix}:${String(seconds).padStart(2, '0')}`;
+};
+
+const formatTimeDisplay = (current, duration) => {
+  const currentLabel = formatTimeValue(current);
+
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return currentLabel;
+  }
+
+  return `${currentLabel} / ${formatTimeValue(duration)}`;
+};
+
+const formatPositionValue = (value) => {
+  if (!Number.isFinite(value) || value < 0) {
+    return '0';
+  }
+
+  return String(Math.round(value * 100) / 100);
+};
+
+const ensureAdminAudioPlayer = (trackId, source) => {
+  if (!trackId || !source) {
+    return null;
+  }
+
+  let player = adminAudioPlayers.get(trackId);
+
+  if (!player) {
+    const audioElement = new Audio(source);
+    audioElement.preload = 'auto';
+
+    player = {
+      audio: audioElement,
+      source,
+      pendingSeek: null,
+      lastPosition: undefined,
+      ui: null
+    };
+
+    audioElement.addEventListener('loadedmetadata', () => {
+      if (player.pendingSeek === null || player.pendingSeek === undefined) {
+        return;
+      }
+
+      try {
+        audioElement.currentTime = player.pendingSeek;
+      } catch (error) {
+        // Ignore browsers that reject immediate seeking without metadata.
+      }
+
+      player.pendingSeek = null;
+    });
+
+    adminAudioPlayers.set(trackId, player);
+    return player;
+  }
+
+  if (player.source !== source) {
+    player.audio.pause();
+    player.audio.src = source;
+    player.source = source;
+    player.pendingSeek = null;
+    player.lastPosition = undefined;
+
+    try {
+      player.audio.currentTime = 0;
+    } catch (error) {
+      // Ignore reset errors that can occur on some browsers.
+    }
+  }
+
+  return player;
+};
+
+const seekAdminAudioPlayer = (player, position) => {
+  if (!player || !player.audio) {
+    return;
+  }
+
+  if (!Number.isFinite(position) || position < 0) {
+    return;
+  }
+
+  const { audio } = player;
+  const difference = Math.abs((audio.currentTime ?? 0) - position);
+  const requiresSeek =
+    player.lastPosition === undefined ||
+    difference > AUDIO_SEEK_THRESHOLD ||
+    audio.paused;
+
+  player.lastPosition = position;
+
+  if (!requiresSeek) {
+    return;
+  }
+
+  if (audio.readyState >= 1) {
+    try {
+      audio.currentTime = position;
+      player.pendingSeek = null;
+      return;
+    } catch (error) {
+      // Ignore seek errors and fall back to pending seek.
+    }
+  }
+
+  player.pendingSeek = position;
+};
+
+const stopAdminAudioPlayer = (player) => {
+  if (!player || !player.audio) {
+    return;
+  }
+
+  player.audio.pause();
+
+  try {
+    player.audio.currentTime = 0;
+  } catch (error) {
+    // Ignore reset failures.
+  }
+
+  player.pendingSeek = null;
+  player.lastPosition = undefined;
+  player.ui = null;
+};
+
+const updateAdminPlayerUiState = (player, track, assetName) => {
+  if (!player || !player.ui) {
+    return;
+  }
+
+  const { audio, ui } = player;
+  const duration = audio?.duration;
+  const targetPosition = Number(track?.position);
+  const resolvedPosition =
+    Number.isFinite(targetPosition) && targetPosition >= 0
+      ? targetPosition
+      : Number(audio?.currentTime) || 0;
+  const isPlaying = track?.playing === false ? false : true;
+
+  if (ui.playButton) {
+    ui.playButton.textContent = isPlaying ? 'Pause' : 'Lecture';
+    ui.playButton.dataset.state = isPlaying ? 'playing' : 'paused';
+    ui.playButton.setAttribute(
+      'aria-label',
+      `${isPlaying ? 'Mettre en pause' : 'Lire'} ${assetName}`
+    );
+  }
+
+  if (ui.timeDisplay && !ui.isScrubbing) {
+    ui.timeDisplay.textContent = formatTimeDisplay(resolvedPosition, duration);
+  }
+
+  if (ui.progressInput && !ui.isScrubbing) {
+    if (Number.isFinite(duration) && duration > 0) {
+      ui.progressInput.disabled = false;
+      const ratio = Math.max(0, Math.min(1, resolvedPosition / duration));
+      ui.progressInput.value = String(Math.round(ratio * AUDIO_PROGRESS_STEPS));
+    } else {
+      ui.progressInput.disabled = true;
+      ui.progressInput.value = '0';
+    }
+  }
+
+  if (ui.positionInput && document.activeElement !== ui.positionInput) {
+    ui.positionInput.value = formatPositionValue(resolvedPosition);
+  }
+};
+
+const runAdminAudioUiUpdate = () => {
+  let hasActivePlayers = false;
+
+  adminAudioPlayers.forEach((player) => {
+    if (!player || !player.audio || !player.ui) {
+      return;
+    }
+
+    hasActivePlayers = true;
+
+    const { audio, ui } = player;
+    const duration = audio.duration;
+    const currentTime = audio.currentTime;
+
+    if (ui.timeDisplay && !ui.isScrubbing) {
+      ui.timeDisplay.textContent = formatTimeDisplay(currentTime, duration);
+    }
+
+    if (ui.progressInput) {
+      if (Number.isFinite(duration) && duration > 0) {
+        ui.progressInput.disabled = false;
+
+        if (!ui.isScrubbing) {
+          const ratio = Math.max(0, Math.min(1, currentTime / duration));
+          ui.progressInput.value = String(Math.round(ratio * AUDIO_PROGRESS_STEPS));
+        }
+      } else {
+        ui.progressInput.disabled = true;
+
+        if (!ui.isScrubbing) {
+          ui.progressInput.value = '0';
+        }
+      }
+    }
+
+    if (ui.positionInput && document.activeElement !== ui.positionInput) {
+      ui.positionInput.value = formatPositionValue(currentTime);
+    }
+  });
+
+  if (hasActivePlayers) {
+    audioUiFrame = requestAnimationFrame(runAdminAudioUiUpdate);
+  } else {
+    audioUiFrame = null;
+  }
+};
+
+const scheduleAdminAudioUiUpdate = () => {
+  if (audioUiFrame !== null) {
+    return;
+  }
+
+  audioUiFrame = requestAnimationFrame(runAdminAudioUiUpdate);
+};
+
+const cancelAdminAudioUiUpdate = () => {
+  if (audioUiFrame === null) {
+    return;
+  }
+
+  cancelAnimationFrame(audioUiFrame);
+  audioUiFrame = null;
+};
+
+const applyAdminAudioPlayback = () => {
+  const tracks = Array.isArray(currentAudioMix.tracks) ? currentAudioMix.tracks : [];
+  const activeIds = new Set();
+
+  tracks.forEach((track) => {
+    const asset = audioTracksById[track.id];
+
+    if (!asset || !asset.file) {
+      return;
+    }
+
+    const player = ensureAdminAudioPlayer(track.id, asset.file);
+
+    if (!player) {
+      return;
+    }
+
+    activeIds.add(track.id);
+
+    const { audio } = player;
+
+    audio.loop = Boolean(track.loop);
+    audio.volume = track.volume ?? 1;
+
+    if (Number.isFinite(track.position) && track.position >= 0) {
+      seekAdminAudioPlayer(player, track.position);
+    }
+
+    const shouldPlay = track.playing === false ? false : true;
+
+    if (shouldPlay) {
+      if (audio.paused || audio.ended) {
+        if (audio.ended || (audio.duration && audio.currentTime >= audio.duration)) {
+          seekAdminAudioPlayer(player, 0);
+        }
+
+        audio.play().catch(() => {
+          /* Ignore autoplay issues on admin side. */
+        });
+      }
+    } else if (!audio.paused) {
+      audio.pause();
+    }
+
+    updateAdminPlayerUiState(player, track, asset?.name || 'la piste audio');
+  });
+
+  adminAudioPlayers.forEach((player, id) => {
+    if (!activeIds.has(id)) {
+      stopAdminAudioPlayer(player);
+      adminAudioPlayers.delete(id);
+    }
+  });
+
+  if (adminAudioPlayers.size > 0) {
+    scheduleAdminAudioUiUpdate();
+  } else {
+    cancelAdminAudioUiUpdate();
+  }
+};
+
 const sanitiseAudioMix = (mix) => {
   if (!mix || typeof mix !== 'object') {
     return { tracks: [] };
@@ -361,9 +675,12 @@ const sanitiseAudioMix = (mix) => {
       ? Math.max(0, Math.min(1, volumeInput))
       : 1;
     const loop = Boolean(entry.loop);
+    const playing = entry.playing === false ? false : true;
+    const positionInput = Number(entry.position);
+    const position = Number.isFinite(positionInput) && positionInput >= 0 ? positionInput : 0;
 
     seen.add(id);
-    tracks.push({ id, volume, loop });
+    tracks.push({ id, volume, loop, playing, position });
   });
 
   return { tracks };
@@ -385,8 +702,17 @@ const areAudioMixesEqual = (a, b) => {
     }
 
     const volumeDelta = Math.abs((track.volume ?? 1) - (other.volume ?? 1));
+    const thisPlaying = track.playing === false ? false : true;
+    const otherPlaying = other.playing === false ? false : true;
+    const positionDelta = Math.abs((track.position ?? 0) - (other.position ?? 0));
 
-    return track.id === other.id && track.loop === other.loop && volumeDelta < 0.0001;
+    return (
+      track.id === other.id &&
+      track.loop === other.loop &&
+      volumeDelta < 0.0001 &&
+      thisPlaying === otherPlaying &&
+      positionDelta < 0.01
+    );
   });
 };
 
@@ -478,6 +804,183 @@ function renderAudioMix() {
 
     item.appendChild(header);
 
+    const player = asset?.file ? ensureAdminAudioPlayer(mixTrack.id, asset.file) : null;
+    const uiState = {
+      playButton: null,
+      timeDisplay: null,
+      progressInput: null,
+      positionInput: null,
+      isScrubbing: false
+    };
+
+    const transportRow = document.createElement('div');
+    transportRow.className = 'audio-mixer__row audio-mixer__row--transport';
+
+    const playButton = document.createElement('button');
+    playButton.type = 'button';
+    playButton.className = 'audio-mixer__playback';
+    playButton.addEventListener('click', () => {
+      const currentPlayer = adminAudioPlayers.get(mixTrack.id);
+      const audioElement = currentPlayer?.audio;
+      const isPlaying = mixTrack.playing === false ? false : true;
+      const nextPlaying = !isPlaying;
+      const candidate = Number(audioElement?.currentTime);
+      const basePosition = Number.isFinite(candidate) && candidate >= 0 ? candidate : mixTrack.position ?? 0;
+      const safePosition = Math.max(0, basePosition);
+
+      updateAudioMixState((tracks) =>
+        tracks.map((track) =>
+          track.id === mixTrack.id
+            ? {
+                ...track,
+                playing: nextPlaying,
+                position: safePosition
+              }
+            : track
+        )
+      );
+    });
+    transportRow.appendChild(playButton);
+
+    const timeDisplay = document.createElement('span');
+    timeDisplay.className = 'audio-mixer__time';
+    transportRow.appendChild(timeDisplay);
+
+    const progressInput = document.createElement('input');
+    progressInput.type = 'range';
+    progressInput.min = '0';
+    progressInput.max = String(AUDIO_PROGRESS_STEPS);
+    progressInput.step = '1';
+    progressInput.value = '0';
+    progressInput.className = 'audio-mixer__progress';
+    progressInput.disabled = true;
+
+    const handleScrubInput = () => {
+      if (!player || !player.audio) {
+        return;
+      }
+
+      const duration = player.audio.duration;
+
+      if (!Number.isFinite(duration) || duration <= 0) {
+        return;
+      }
+
+      uiState.isScrubbing = true;
+
+      const ratio = Number(progressInput.value) / AUDIO_PROGRESS_STEPS;
+      const seconds = Math.max(0, Math.min(duration, ratio * duration));
+      timeDisplay.textContent = formatTimeDisplay(seconds, duration);
+
+      if (uiState.positionInput && document.activeElement !== uiState.positionInput) {
+        uiState.positionInput.value = formatPositionValue(seconds);
+      }
+    };
+
+    progressInput.addEventListener('input', handleScrubInput);
+
+    const startScrub = () => {
+      uiState.isScrubbing = true;
+    };
+
+    ['pointerdown', 'mousedown', 'touchstart'].forEach((eventName) => {
+      progressInput.addEventListener(eventName, startScrub);
+    });
+
+    const commitScrub = () => {
+      if (!player || !player.audio) {
+        uiState.isScrubbing = false;
+        return;
+      }
+
+      const duration = player.audio.duration;
+
+      if (!Number.isFinite(duration) || duration <= 0) {
+        uiState.isScrubbing = false;
+        return;
+      }
+
+      const ratio = Number(progressInput.value) / AUDIO_PROGRESS_STEPS;
+      const seconds = Math.max(0, Math.min(duration, ratio * duration));
+
+      uiState.isScrubbing = false;
+
+      updateAudioMixState((tracks) =>
+        tracks.map((track) =>
+          track.id === mixTrack.id
+            ? {
+                ...track,
+                position: seconds
+              }
+            : track
+        )
+      );
+    };
+
+    ['pointerup', 'mouseup', 'touchend', 'change'].forEach((eventName) => {
+      progressInput.addEventListener(eventName, commitScrub);
+    });
+
+    transportRow.appendChild(progressInput);
+
+    const positionWrapper = document.createElement('div');
+    positionWrapper.className = 'audio-mixer__position';
+
+    const positionLabel = document.createElement('span');
+    positionLabel.className = 'audio-mixer__position-label';
+    positionLabel.textContent = 'Position (s)';
+    positionWrapper.appendChild(positionLabel);
+
+    const positionInput = document.createElement('input');
+    positionInput.type = 'number';
+    positionInput.min = '0';
+    positionInput.step = '0.1';
+    positionInput.className = 'audio-mixer__position-input';
+    positionInput.value = formatPositionValue(mixTrack.position ?? 0);
+    positionInput.setAttribute(
+      'aria-label',
+      `Position en secondes pour ${asset?.name || 'la piste audio'}`
+    );
+    positionInput.addEventListener('change', () => {
+      const nextValue = Number(positionInput.value);
+
+      if (!Number.isFinite(nextValue)) {
+        positionInput.value = formatPositionValue(mixTrack.position ?? 0);
+        return;
+      }
+
+      const safeValue = Math.max(0, nextValue);
+
+      if (safeValue !== nextValue) {
+        positionInput.value = formatPositionValue(safeValue);
+      }
+
+      updateAudioMixState((tracks) =>
+        tracks.map((track) =>
+          track.id === mixTrack.id
+            ? {
+                ...track,
+                position: safeValue
+              }
+            : track
+        )
+      );
+    });
+
+    positionWrapper.appendChild(positionInput);
+    transportRow.appendChild(positionWrapper);
+
+    item.appendChild(transportRow);
+
+    uiState.playButton = playButton;
+    uiState.timeDisplay = timeDisplay;
+    uiState.progressInput = progressInput;
+    uiState.positionInput = positionInput;
+
+    if (player) {
+      player.ui = uiState;
+    }
+
     const controlsRow = document.createElement('div');
     controlsRow.className = 'audio-mixer__row';
 
@@ -559,6 +1062,18 @@ function renderAudioMix() {
 
     item.appendChild(controlsRow);
 
+    if (player) {
+      updateAdminPlayerUiState(player, mixTrack, asset?.name || 'la piste audio');
+    } else {
+      const isPlaying = mixTrack.playing === false ? false : true;
+      playButton.textContent = isPlaying ? 'Pause' : 'Lecture';
+      playButton.dataset.state = isPlaying ? 'playing' : 'paused';
+      playButton.setAttribute(
+        'aria-label',
+        `${isPlaying ? 'Mettre en pause' : 'Lire'} ${asset?.name || 'la piste audio'}`
+      );
+    }
+
     audioActiveList.appendChild(item);
   });
 
@@ -571,6 +1086,7 @@ function applyAudioMixLocally(mix) {
   const changed = !areAudioMixesEqual(currentAudioMix, normalised);
   currentAudioMix = normalised;
   renderAudioMix();
+  applyAdminAudioPlayback();
   return changed;
 }
 
@@ -950,7 +1466,10 @@ if (audioAddButton) {
         return tracks;
       }
 
-      return [...tracks, { id: selectedId, volume: 1, loop: false }];
+      return [
+        ...tracks,
+        { id: selectedId, volume: 1, loop: false, playing: true, position: 0 }
+      ];
     });
 
     if (audioSelect.options.length > 0) {

@@ -222,8 +222,11 @@ const normaliseAudioMixTrack = (entry) => {
     ? Math.max(0, Math.min(1, volumeInput))
     : 1;
   const loop = Boolean(entry.loop);
+  const playing = entry.playing === false ? false : true;
+  const positionInput = Number(entry.position);
+  const position = Number.isFinite(positionInput) && positionInput >= 0 ? positionInput : 0;
 
-  return { id: track.id, volume, loop };
+  return { id: track.id, volume, loop, playing, position };
 };
 
 const normaliseAudioMix = (mix) => {
@@ -265,8 +268,17 @@ const areAudioMixesEqual = (a, b) => {
     }
 
     const volumeDelta = Math.abs((track.volume ?? 1) - (other.volume ?? 1));
+    const thisPlaying = track.playing === false ? false : true;
+    const otherPlaying = other.playing === false ? false : true;
+    const positionDelta = Math.abs((track.position ?? 0) - (other.position ?? 0));
 
-    return track.id === other.id && track.loop === other.loop && volumeDelta < 0.0001;
+    return (
+      track.id === other.id &&
+      track.loop === other.loop &&
+      volumeDelta < 0.0001 &&
+      thisPlaying === otherPlaying &&
+      positionDelta < 0.01
+    );
   });
 };
 

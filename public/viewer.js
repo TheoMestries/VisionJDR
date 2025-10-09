@@ -10,6 +10,100 @@ let latestScene = null;
 let resizeFrame = null;
 let latestAudioMix = { tracks: [] };
 const audioPlayers = new Map();
+const AUDIO_SEEK_THRESHOLD = 0.25;
+
+const createAudioPlayer = (source) => {
+  const audioElement = new Audio(source);
+  audioElement.preload = 'auto';
+
+  const player = {
+    audio: audioElement,
+    source,
+    pendingSeek: null,
+    lastPosition: undefined
+  };
+
+  audioElement.addEventListener('loadedmetadata', () => {
+    if (player.pendingSeek === null || player.pendingSeek === undefined) {
+      return;
+    }
+
+    try {
+      audioElement.currentTime = player.pendingSeek;
+    } catch (error) {
+      // Ignore seek errors triggered by browsers that disallow immediate seeking.
+    }
+
+    player.pendingSeek = null;
+  });
+
+  return player;
+};
+
+const ensureAudioPlayer = (id, source) => {
+  if (!id || !source) {
+    return null;
+  }
+
+  let player = audioPlayers.get(id);
+
+  if (!player) {
+    player = createAudioPlayer(source);
+    audioPlayers.set(id, player);
+    return player;
+  }
+
+  if (player.source !== source) {
+    player.audio.pause();
+    player.audio.src = source;
+    player.source = source;
+    player.pendingSeek = null;
+    player.lastPosition = undefined;
+
+    try {
+      player.audio.currentTime = 0;
+    } catch (error) {
+      // Ignore seek reset errors.
+    }
+  }
+
+  return player;
+};
+
+const seekAudioPlayer = (player, position) => {
+  if (!player || !player.audio) {
+    return;
+  }
+
+  if (!Number.isFinite(position) || position < 0) {
+    return;
+  }
+
+  const { audio } = player;
+  const difference = Math.abs((audio.currentTime ?? 0) - position);
+  const requiresSeek =
+    player.lastPosition === undefined ||
+    difference > AUDIO_SEEK_THRESHOLD ||
+    audio.paused;
+
+  player.lastPosition = position;
+
+  if (!requiresSeek) {
+    return;
+  }
+
+  if (audio.readyState >= 1) {
+    try {
+      audio.currentTime = position;
+      player.pendingSeek = null;
+      return;
+    } catch (error) {
+      // Ignore seek errors and fall back to pending seek.
+    }
+  }
+
+  player.pendingSeek = position;
+};
 
 const updateStackingForColumn = (columnElement) => {
   if (!columnElement) {
@@ -236,9 +330,12 @@ const sanitiseAudioMix = (mix) => {
       ? Math.max(0, Math.min(1, volumeInput))
       : 1;
     const loop = Boolean(entry.loop);
+    const playing = entry.playing === false ? false : true;
+    const positionInput = Number(entry.position);
+    const position = Number.isFinite(positionInput) && positionInput >= 0 ? positionInput : null;
 
     seen.add(id);
-    tracks.push({ id, volume, loop });
+    tracks.push({ id, volume, loop, playing, position });
   });
 
   return tracks;
@@ -256,6 +353,9 @@ const stopAudioPlayer = (player) => {
   } catch (error) {
     // Ignore reset errors that can happen on certain browsers.
   }
+
+  player.pendingSeek = null;
+  player.lastPosition = undefined;
 };
 
 const applyAudioMix = (mix) => {
@@ -272,50 +372,35 @@ const applyAudioMix = (mix) => {
     activeIds.add(track.id);
 
     const source = asset.file;
-    let player = audioPlayers.get(track.id);
+    const player = ensureAudioPlayer(track.id, source);
 
     if (!player) {
-      const audioElement = new Audio(source);
-      audioElement.loop = Boolean(track.loop);
-      audioElement.volume = track.volume ?? 1;
-      audioElement.preload = 'auto';
-      player = { audio: audioElement, source };
-      audioPlayers.set(track.id, player);
-      audioElement.play().catch(() => {
-        /* Autoplay might be blocked; ignore rejection. */
-      });
       return;
     }
 
     const { audio } = player;
 
-    if (player.source !== source) {
-      audio.pause();
-      audio.src = source;
-      player.source = source;
-
-      try {
-        audio.currentTime = 0;
-      } catch (error) {
-        /* ignore reset failure */
-      }
-    }
-
     audio.loop = Boolean(track.loop);
     audio.volume = track.volume ?? 1;
 
-    if (audio.paused || audio.ended) {
-      if (audio.ended || (audio.duration && audio.currentTime >= audio.duration)) {
-        try {
-          audio.currentTime = 0;
-        } catch (error) {
-          /* ignore reset failure */
-        }
-      }
+    if (Number.isFinite(track.position) && track.position >= 0) {
+      seekAudioPlayer(player, track.position);
+    }
 
-      audio.play().catch(() => {
-        /* ignore autoplay issues */
-      });
+    const shouldPlay = track.playing === false ? false : true;
+
+    if (shouldPlay) {
+      if (audio.paused || audio.ended) {
+        if (audio.ended || (audio.duration && audio.currentTime >= audio.duration)) {
+          seekAudioPlayer(player, 0);
+        }
+
+        audio.play().catch(() => {
+          /* Autoplay might be blocked; ignore rejection. */
+        });
+      }
+    } else if (!audio.paused) {
+      audio.pause();
     }
   });
 
