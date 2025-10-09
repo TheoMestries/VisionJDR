@@ -562,6 +562,31 @@ select:focus {
   background: rgba(15, 23, 42, 0.8);
 }
 
+.asset-card__badge {
+  position: absolute;
+  top: 0.6rem;
+  left: 0.6rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.85);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.45);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.asset-card__badge--audio {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.92), rgba(37, 99, 235, 0.85));
+}
+
+.asset-card__badge--video {
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.92), rgba(234, 88, 12, 0.85));
+}
+
 .asset-card__preview img {
   width: 100%;
   height: 100%;
