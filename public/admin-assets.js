@@ -7,11 +7,13 @@ const trackStatus = document.getElementById('track-upload-status');
 const characterList = document.getElementById('character-assets');
 const backgroundList = document.getElementById('background-assets');
 const trackList = document.getElementById('track-assets');
+const videoList = document.getElementById('video-assets');
 const characterCount = document.getElementById('character-count');
 const backgroundCount = document.getElementById('background-count');
 const trackCount = document.getElementById('track-count');
+const videoCount = document.getElementById('video-count');
 
-let library = { backgrounds: [], characters: [], tracks: [] };
+let library = { backgrounds: [], characters: [], tracks: [], audioTracks: [], videoTracks: [] };
 
 const statusByType = {
   character: characterStatus,
@@ -96,6 +98,27 @@ const getTrackStorageLabel = (asset = {}) => {
   return null;
 };
 
+const isTrackType = (type) => ['track', 'track-audio', 'track-video'].includes(type);
+
+const normaliseTrackType = (type) => (type && type.startsWith('track') ? 'track' : type);
+
+const splitTracksByMediaKind = (tracks) => {
+  const audio = [];
+  const video = [];
+
+  tracks.forEach((track) => {
+    const kind = getTrackMediaKind(track) || getTrackStorage(track);
+
+    if (kind === 'video') {
+      video.push(track);
+    } else if (kind === 'audio') {
+      audio.push(track);
+    }
+  });
+
+  return { audio, video };
+};
+
 const endpointByType = {
   character: '/api/assets/characters/',
   background: '/api/assets/backgrounds/',
@@ -155,6 +178,7 @@ const formatDateTime = (value) => {
 const createAssetCard = (asset, type) => {
   const item = document.createElement('li');
   item.className = 'asset-card';
+  item.dataset.assetCategory = type;
 
   if (asset.origin === 'upload') {
     item.classList.add('asset-card--custom');
@@ -168,16 +192,17 @@ const createAssetCard = (asset, type) => {
   const preview = document.createElement('div');
   preview.className = 'asset-card__preview';
 
-  const trackStorage = type === 'track' ? getTrackStorage(asset) : null;
-  const trackStorageLabel = type === 'track' ? getTrackStorageLabel(asset) : null;
-  const trackMediaKind = type === 'track' ? getTrackMediaKind(asset) : null;
+  const normalizedType = normaliseTrackType(type);
+  const trackStorage = isTrackType(type) ? getTrackStorage(asset) : null;
+  const trackStorageLabel = isTrackType(type) ? getTrackStorageLabel(asset) : null;
+  const trackMediaKind = isTrackType(type) ? getTrackMediaKind(asset) : null;
 
   if (asset.image) {
     const image = document.createElement('img');
     image.src = asset.image;
     image.alt = asset.name || (type === 'character' ? 'Personnage' : 'Décor');
     preview.appendChild(image);
-  } else if (type === 'track') {
+  } else if (isTrackType(type)) {
     preview.classList.add('asset-card__preview--track');
 
     if (asset.file) {
@@ -237,14 +262,14 @@ const createAssetCard = (asset, type) => {
   origin.textContent = asset.origin === 'upload' ? 'Importé' : 'Préconfiguré';
   item.appendChild(origin);
 
-  if (type === 'track' && trackStorageLabel) {
+  if (isTrackType(type) && trackStorageLabel) {
     const storageElement = document.createElement('p');
     storageElement.className = 'asset-card__meta';
     storageElement.textContent = `Stockage : ${trackStorageLabel}`;
     item.appendChild(storageElement);
   }
 
-  if (type === 'track' && asset.mimeType) {
+  if (isTrackType(type) && asset.mimeType) {
     const mimeElement = document.createElement('p');
     mimeElement.className = 'asset-card__meta asset-card__meta--muted';
     mimeElement.textContent = `Format : ${asset.mimeType}`;
@@ -269,7 +294,10 @@ const createAssetCard = (asset, type) => {
     deleteButton.className = 'asset-card__button';
     deleteButton.textContent = 'Supprimer';
     deleteButton.dataset.assetId = asset.id;
-    deleteButton.dataset.assetType = type;
+    deleteButton.dataset.assetType = normalizedType;
+    if (isTrackType(type) && type !== normalizedType) {
+      deleteButton.dataset.assetCategory = type;
+    }
     deleteButton.dataset.action = 'delete-asset';
 
     actions.appendChild(deleteButton);
@@ -279,7 +307,15 @@ const createAssetCard = (asset, type) => {
   return item;
 };
 
-const renderAssetList = (listElement, assets, type, countElement) => {
+const defaultEmptyMessages = {
+  character: 'Aucun personnage enregistré pour le moment.',
+  background: 'Aucun décor enregistré pour le moment.',
+  track: 'Aucune piste enregistrée pour le moment.',
+  'track-audio': 'Aucune musique enregistrée pour le moment.',
+  'track-video': 'Aucune vidéo enregistrée pour le moment.'
+};
+
+const renderAssetList = (listElement, assets, type, countElement, options = {}) => {
   if (!listElement) {
     return;
   }
@@ -303,13 +339,8 @@ const renderAssetList = (listElement, assets, type, countElement) => {
   if (!sortedAssets.length) {
     const emptyMessage = document.createElement('li');
     emptyMessage.className = 'asset-card asset-card--empty';
-    if (type === 'character') {
-      emptyMessage.textContent = 'Aucun personnage enregistré pour le moment.';
-    } else if (type === 'background') {
-      emptyMessage.textContent = 'Aucun décor enregistré pour le moment.';
-    } else {
-      emptyMessage.textContent = 'Aucune piste enregistrée pour le moment.';
-    }
+    emptyMessage.textContent = options.emptyMessage ?? defaultEmptyMessages[type] ??
+      'Aucun média enregistré pour le moment.';
     listElement.appendChild(emptyMessage);
   } else {
     sortedAssets.forEach((asset) => {
@@ -331,9 +362,29 @@ const refreshLibrary = async () => {
 
   library = await response.json();
 
-  renderAssetList(characterList, library.characters ?? [], 'character', characterCount);
-  renderAssetList(backgroundList, library.backgrounds ?? [], 'background', backgroundCount);
-  renderAssetList(trackList, library.tracks ?? [], 'track', trackCount);
+  const characters = Array.isArray(library.characters) ? library.characters : [];
+  const backgrounds = Array.isArray(library.backgrounds) ? library.backgrounds : [];
+  const tracks = Array.isArray(library.tracks) ? library.tracks : [];
+  let audioTracks = Array.isArray(library.audioTracks) ? library.audioTracks : [];
+  let videoTracks = Array.isArray(library.videoTracks) ? library.videoTracks : [];
+
+  if (!audioTracks.length && !videoTracks.length && tracks.length) {
+    const splitted = splitTracksByMediaKind(tracks);
+    audioTracks = splitted.audio;
+    videoTracks = splitted.video;
+  }
+
+  library.audioTracks = audioTracks;
+  library.videoTracks = videoTracks;
+
+  renderAssetList(characterList, characters, 'character', characterCount);
+  renderAssetList(backgroundList, backgrounds, 'background', backgroundCount);
+  renderAssetList(trackList, audioTracks, 'track-audio', trackCount, {
+    emptyMessage: defaultEmptyMessages['track-audio']
+  });
+  renderAssetList(videoList, videoTracks, 'track-video', videoCount, {
+    emptyMessage: defaultEmptyMessages['track-video']
+  });
 };
 
 const deleteAsset = async (type, assetId, buttonElement) => {
@@ -389,6 +440,8 @@ const handleAssetListClick = (event) => {
 
   const assetId = trigger.dataset.assetId;
   const assetType = trigger.dataset.assetType;
+  const assetCategory =
+    trigger.dataset.assetCategory || trigger.closest('li')?.dataset.assetCategory || null;
 
   if (!assetId || !assetType) {
     return;
@@ -401,7 +454,13 @@ const handleAssetListClick = (event) => {
   } else if (assetType === 'character') {
     confirmationMessage = 'Supprimer ce personnage de la médiathèque ?';
   } else if (assetType === 'track') {
-    confirmationMessage = 'Supprimer cette piste de la médiathèque ?';
+    if (assetCategory === 'track-video') {
+      confirmationMessage = 'Supprimer cette vidéo de la médiathèque ?';
+    } else if (assetCategory === 'track-audio') {
+      confirmationMessage = 'Supprimer cette musique de la médiathèque ?';
+    } else {
+      confirmationMessage = 'Supprimer cette piste de la médiathèque ?';
+    }
   }
 
   if (!window.confirm(confirmationMessage)) {
@@ -472,6 +531,10 @@ if (backgroundList) {
 
 if (trackList) {
   trackList.addEventListener('click', handleAssetListClick);
+}
+
+if (videoList) {
+  videoList.addEventListener('click', handleAssetListClick);
 }
 
 refreshLibrary().catch(() => {

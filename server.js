@@ -124,12 +124,66 @@ const detectTrackStorage = (track) => {
   return null;
 };
 
+const AUDIO_EXTENSIONS = new Set([
+  'mp3',
+  'wav',
+  'ogg',
+  'oga',
+  'aac',
+  'flac',
+  'm4a',
+  'opus',
+  'weba'
+]);
+
+const VIDEO_EXTENSIONS = new Set(['mp4', 'mpeg', 'mpg', 'mov', 'qt', 'm4v', 'webm']);
+
+const detectTrackKind = (track) => {
+  const storage = detectTrackStorage(track);
+
+  if (storage === 'audio' || storage === 'video') {
+    return storage;
+  }
+
+  const mimeType = (track.mimeType || '').toString().toLowerCase();
+
+  if (mimeType.startsWith('video/')) {
+    return 'video';
+  }
+
+  if (mimeType.startsWith('audio/')) {
+    return 'audio';
+  }
+
+  const filePath = (track.file || track.source || '').toString().toLowerCase();
+
+  if (!filePath) {
+    return null;
+  }
+
+  const extension = path.extname(filePath).replace('.', '');
+
+  if (!extension) {
+    return null;
+  }
+
+  if (VIDEO_EXTENSIONS.has(extension)) {
+    return 'video';
+  }
+
+  if (AUDIO_EXTENSIONS.has(extension)) {
+    return 'audio';
+  }
+
+  return null;
+};
+
 const normaliseTrack = (track) => {
   if (!track || typeof track !== 'object') {
     return null;
   }
 
-  const storage = detectTrackStorage(track);
+  const storage = detectTrackKind(track);
 
   return {
     ...track,
@@ -162,7 +216,31 @@ let backgroundsById = {};
 let charactersById = {};
 let tracks = [];
 let tracksById = {};
-let library = { backgrounds: [], characters: [], tracks: [], layouts: [] };
+let library = {
+  backgrounds: [],
+  characters: [],
+  tracks: [],
+  audioTracks: [],
+  videoTracks: [],
+  layouts: []
+};
+
+const splitTracksByKind = (collection) => {
+  const audio = [];
+  const video = [];
+
+  collection.forEach((track) => {
+    const kind = detectTrackKind(track);
+
+    if (kind === 'video') {
+      video.push(track);
+    } else if (kind === 'audio') {
+      audio.push(track);
+    }
+  });
+
+  return { audio, video };
+};
 
 const refreshLibrary = () => {
   backgrounds = [...defaultBackgrounds, ...(customLibrary.backgrounds ?? [])];
@@ -173,7 +251,15 @@ const refreshLibrary = () => {
   backgroundsById = Object.fromEntries(backgrounds.map((item) => [item.id, item]));
   charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
   tracksById = Object.fromEntries(tracks.map((item) => [item.id, item]));
-  library = { backgrounds, characters, tracks, layouts: sceneLayouts };
+  const { audio, video } = splitTracksByKind(tracks);
+  library = {
+    backgrounds,
+    characters,
+    tracks,
+    audioTracks: audio,
+    videoTracks: video,
+    layouts: sceneLayouts
+  };
 };
 
 const persistCustomLibrary = () => {
@@ -383,10 +469,16 @@ app.get('/api/library', (req, res) => {
 });
 
 app.get('/api/assets/custom', (req, res) => {
+  const { audio: audioTracks, video: videoTracks } = splitTracksByKind(
+    (customLibrary.tracks ?? []).map(normaliseTrack).filter(Boolean)
+  );
+
   res.json({
     backgrounds: customLibrary.backgrounds ?? [],
     characters: customLibrary.characters ?? [],
-    tracks: customLibrary.tracks ?? []
+    tracks: customLibrary.tracks ?? [],
+    audioTracks,
+    videoTracks
   });
 });
 
