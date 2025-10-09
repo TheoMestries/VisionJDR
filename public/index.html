@@ -7,6 +7,48 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="viewer">
+    <div class="viewer-controls" id="viewer-controls">
+      <button
+        type="button"
+        class="viewer-controls__toggle"
+        aria-expanded="false"
+        aria-controls="viewer-volume-panel"
+        aria-label="Ajuster le volume"
+      >
+        <svg
+          class="viewer-controls__icon"
+          width="26"
+          height="26"
+          viewBox="0 0 24 24"
+          role="img"
+          aria-hidden="true"
+        >
+          <path
+            fill="currentColor"
+            d="M12 9.5a2.5 2.5 0 1 1 0 5a2.5 2.5 0 0 1 0-5m0-6a1 1 0 0 1 .96.73l.56 2.01c.43.1.86.26 1.26.45l1.85-1.1a1 1 0 0 1 1.32.25l1.5 2.6a1 1 0 0 1-.18 1.26l-1.57 1.36c.05.42.05.85 0 1.27l1.57 1.36a1 1 0 0 1 .18 1.25l-1.5 2.6a1 1 0 0 1-1.32.25l-1.85-1.1a7.1 7.1 0 0 1-1.26.45l-.56 2a1 1 0 0 1-.96.74h-3a1 1 0 0 1-.96-.74l-.56-2a7.1 7.1 0 0 1-1.26-.45l-1.85 1.1a1 1 0 0 1-1.32-.25l-1.5-2.6a1 1 0 0 1 .18-1.26l1.57-1.36c-.05-.42-.05-.85 0-1.27L2.4 9.7a1 1 0 0 1-.18-1.26l1.5-2.6a1 1 0 0 1 1.32-.25l1.85 1.1c.4-.2.83-.35 1.26-.45l.56-2A1 1 0 0 1 9 3.5zm-.58 2l-.4 1.42a1 1 0 0 1-.72.7a5.1 5.1 0 0 0-1.84.8a1 1 0 0 1-1.05.05l-1.32-.79l-.75 1.3l1.13.98a1 1 0 0 1 .33 1a5.1 5.1 0 0 0 0 2a1 1 0 0 1-.33 1l-1.13.98l.75 1.3l1.32-.8a1 1 0 0 1 1.05.05a5.1 5.1 0 0 0 1.84.8a1 1 0 0 1 .72.7l.4 1.42h1.5l.4-1.42a1 1 0 0 1 .72-.7a5.1 5.1 0 0 0 1.84-.8a1 1 0 0 1 1.05-.05l1.32.8l.75-1.3l-1.13-.98a1 1 0 0 1-.33-1a5.1 5.1 0 0 0 0-2a1 1 0 0 1 .33-1l1.13-.98l-.75-1.3l-1.32.79a1 1 0 0 1-1.05-.05a5.1 5.1 0 0 0-1.84-.8a1 1 0 0 1-.72-.7l-.4-1.42z"
+          />
+        </svg>
+      </button>
+      <div class="viewer-controls__panel" id="viewer-volume-panel" hidden tabindex="-1">
+        <label for="viewer-volume" class="viewer-controls__label">Volume</label>
+        <div class="viewer-controls__slider-row">
+          <input
+            type="range"
+            id="viewer-volume"
+            class="viewer-controls__slider"
+            min="0"
+            max="100"
+            value="100"
+            step="1"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="100"
+            aria-label="Volume du lecteur"
+          />
+          <span class="viewer-controls__value" id="viewer-volume-value">100%</span>
+        </div>
+      </div>
+    </div>
     <section class="scene scene--player" id="scene">
       <div class="scene__overlay">
         <div class="scene__column scene__column--left" id="left-column"></div>
