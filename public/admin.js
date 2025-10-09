@@ -1,5 +1,6 @@
 const form = document.getElementById('scene-form');
 const sceneTypeSelect = document.getElementById('scene-type');
+const campaignSelect = document.getElementById('campaign');
 const layoutSelect = document.getElementById('layout');
 const backgroundSelect = document.getElementById('background');
 const videoSelect = document.getElementById('video-track');
@@ -43,6 +44,36 @@ let videoTracksById = {};
 let currentAudioMix = { tracks: [] };
 const adminAudioPlayers = new Map();
 let audioUiFrame = null;
+let campaigns = [];
+let campaignsById = {};
+let selectedCampaignId = null;
+let fullBackgrounds = [];
+let fullCharacters = [];
+let fullAudioTracks = [];
+let fullVideoTracks = [];
+let fullTracks = [];
+
+const CAMPAIGN_STORAGE_KEY = 'visionjdr.selectedCampaign';
+
+const readStoredCampaignId = () => {
+  try {
+    return window.localStorage?.getItem(CAMPAIGN_STORAGE_KEY) || null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const storeSelectedCampaignId = (campaignId) => {
+  try {
+    if (campaignId) {
+      window.localStorage?.setItem(CAMPAIGN_STORAGE_KEY, campaignId);
+    } else {
+      window.localStorage?.removeItem(CAMPAIGN_STORAGE_KEY);
+    }
+  } catch (error) {
+    // Ignore storage errors (e.g., private mode).
+  }
+};
 
 const AUDIO_PROGRESS_STEPS = 1000;
 const AUDIO_SEEK_THRESHOLD = 0.25;
@@ -81,6 +112,215 @@ const getSlotInfo = (slot) => {
   }
 
   return { id: null, orientation: ORIENTATION_NORMAL };
+};
+
+const matchesCampaign = (asset, campaignId) => {
+  if (!campaignId) {
+    return true;
+  }
+
+  const assetCampaignId = (asset?.campaignId || '').toString();
+
+  return !assetCampaignId || assetCampaignId === campaignId;
+};
+
+const filterAssetsByCampaign = (assets, campaignId) => {
+  if (!Array.isArray(assets)) {
+    return [];
+  }
+
+  return assets.filter((item) => matchesCampaign(item, campaignId));
+};
+
+const splitTracksByMediaKind = (tracks) => {
+  const audio = [];
+  const video = [];
+
+  if (!Array.isArray(tracks)) {
+    return { audio, video };
+  }
+
+  tracks.forEach((track) => {
+    if (!track || typeof track !== 'object') {
+      return;
+    }
+
+    const storage = (track.storage || '').toString();
+
+    if (storage === 'video') {
+      video.push(track);
+      return;
+    }
+
+    if (storage === 'audio') {
+      audio.push(track);
+      return;
+    }
+
+    const mimeType = (track.mimeType || '').toString().toLowerCase();
+
+    if (mimeType.startsWith('video/')) {
+      video.push(track);
+      return;
+    }
+
+    if (mimeType.startsWith('audio/')) {
+      audio.push(track);
+    }
+  });
+
+  return { audio, video };
+};
+
+const updateCampaignSelectOptions = () => {
+  if (!campaignSelect) {
+    return selectedCampaignId;
+  }
+
+  campaignSelect.innerHTML = '';
+
+  campaigns.forEach((campaign) => {
+    const option = document.createElement('option');
+    option.value = campaign.id;
+    option.textContent = campaign.name;
+    campaignSelect.appendChild(option);
+  });
+
+  if (selectedCampaignId && campaignsById[selectedCampaignId]) {
+    campaignSelect.value = selectedCampaignId;
+    return selectedCampaignId;
+  }
+
+  if (campaignSelect.options.length > 0) {
+    campaignSelect.selectedIndex = 0;
+    return campaignSelect.value || null;
+  }
+
+  campaignSelect.value = '';
+  return null;
+};
+
+const filterAssetsForCurrentCampaign = () => {
+  backgrounds = filterAssetsByCampaign(fullBackgrounds, selectedCampaignId);
+  characters = filterAssetsByCampaign(fullCharacters, selectedCampaignId);
+  audioTracks = filterAssetsByCampaign(fullAudioTracks, selectedCampaignId);
+  videoTracks = filterAssetsByCampaign(fullVideoTracks, selectedCampaignId);
+
+  const filteredTracks = filterAssetsByCampaign(fullTracks, selectedCampaignId);
+
+  if (!audioTracks.length && !videoTracks.length && filteredTracks.length) {
+    const splitted = splitTracksByMediaKind(filteredTracks);
+    audioTracks = splitted.audio;
+    videoTracks = splitted.video;
+  }
+
+  backgroundsById = Object.fromEntries(backgrounds.map((item) => [item.id, item]));
+  charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
+  audioTracksById = Object.fromEntries(audioTracks.map((item) => [item.id, item]));
+  videoTracksById = Object.fromEntries(videoTracks.map((item) => [item.id, item]));
+};
+
+const refreshFormOptions = ({ preservedScene = null } = {}) => {
+  if (!backgroundSelect || !layoutSelect) {
+    return;
+  }
+
+  const baseScene = preservedScene || getSceneFromForm();
+  const preservedLeft = Array.isArray(baseScene.left) ? baseScene.left : [];
+  const preservedRight = Array.isArray(baseScene.right) ? baseScene.right : [];
+
+  populateSelect(backgroundSelect, backgrounds);
+  populateVideoSelect(videoSelect, videoTracks);
+  populateAudioSelect(audioSelect, audioTracks);
+  const mixChanged = applyAudioMixLocally(currentAudioMix);
+
+  if (mixChanged && socket) {
+    socket.emit('audio:set', currentAudioMix);
+  }
+  updateVideoSelectAvailability();
+
+  leftSelectElements.forEach((slot, index) => {
+    if (!slot || !slot.characterSelect) {
+      return;
+    }
+
+    populateSelect(slot.characterSelect, characters, { includeEmpty: true });
+    applySlotValue(slot, preservedLeft[index]);
+  });
+
+  rightSelectElements.forEach((slot, index) => {
+    if (!slot || !slot.characterSelect) {
+      return;
+    }
+
+    populateSelect(slot.characterSelect, characters, { includeEmpty: true });
+    applySlotValue(slot, preservedRight[index]);
+  });
+
+  if (campaignSelect) {
+    campaignSelect.value = selectedCampaignId ?? '';
+  }
+
+  const backgroundValue = backgroundsById[baseScene.background]
+    ? baseScene.background
+    : backgrounds[0]?.id ?? '';
+
+  backgroundSelect.value = backgroundValue;
+
+  if (videoSelect) {
+    const videoValue = baseScene.video && videoTracksById[baseScene.video]
+      ? baseScene.video
+      : '';
+    videoSelect.value = videoValue;
+  }
+
+  updateSceneTypeUI(getSceneTypeFromValue(sceneTypeSelect?.value));
+
+  currentScene = getSceneFromForm();
+  renderPreview(currentScene);
+
+  updateAudioControlsAvailability();
+};
+
+const setSelectedCampaign = (
+  campaignId,
+  { preservedScene = null, skipStorage = false } = {}
+) => {
+  const validId = campaignId && campaignsById[campaignId]
+    ? campaignId
+    : campaigns[0]?.id ?? null;
+
+  selectedCampaignId = validId;
+
+  if (!skipStorage) {
+    storeSelectedCampaignId(selectedCampaignId);
+  }
+
+  if (campaignSelect) {
+    campaignSelect.value = selectedCampaignId ?? '';
+  }
+
+  filterAssetsForCurrentCampaign();
+  refreshFormOptions({ preservedScene });
+};
+
+const updateLibraryState = (nextLibrary) => {
+  fullBackgrounds = Array.isArray(nextLibrary?.backgrounds)
+    ? nextLibrary.backgrounds
+    : [];
+  fullCharacters = Array.isArray(nextLibrary?.characters)
+    ? nextLibrary.characters
+    : [];
+  fullAudioTracks = Array.isArray(nextLibrary?.audioTracks)
+    ? nextLibrary.audioTracks
+    : [];
+  fullVideoTracks = Array.isArray(nextLibrary?.videoTracks)
+    ? nextLibrary.videoTracks
+    : [];
+  fullTracks = Array.isArray(nextLibrary?.tracks) ? nextLibrary.tracks : [];
+
+  campaigns = Array.isArray(nextLibrary?.campaigns) ? nextLibrary.campaigns : [];
+  campaignsById = Object.fromEntries(campaigns.map((item) => [item.id, item]));
 };
 
 const updateStackingForColumn = (columnElement) => {
@@ -1385,7 +1625,8 @@ const getSceneFromForm = () => {
     background: backgroundSelect.value,
     layout: layoutSelect.value || currentLayout?.id || null,
     left: collectSlotValues(leftSelectElements),
-    right: collectSlotValues(rightSelectElements)
+    right: collectSlotValues(rightSelectElements),
+    campaign: selectedCampaignId
   };
 
   if (type === SCENE_TYPE_VIDEO) {
@@ -1476,6 +1717,11 @@ const applySceneToForm = (scene) => {
   if (!scene) {
     return;
   }
+
+  setSelectedCampaign(scene.campaign ?? selectedCampaignId, {
+    preservedScene: scene,
+    skipStorage: false
+  });
 
   const sceneType = getSceneTypeFromValue(scene.type);
 
@@ -1602,68 +1848,45 @@ const handleLibraryUpdate = (nextLibrary) => {
     return;
   }
 
-  const nextBackgrounds = Array.isArray(nextLibrary.backgrounds)
-    ? nextLibrary.backgrounds
-    : backgrounds;
-  const nextCharacters = Array.isArray(nextLibrary.characters)
-    ? nextLibrary.characters
-    : characters;
-  const nextAudioTracks = Array.isArray(nextLibrary.audioTracks)
-    ? nextLibrary.audioTracks
-    : audioTracks;
-  const nextVideoTracks = Array.isArray(nextLibrary.videoTracks)
-    ? nextLibrary.videoTracks
-    : videoTracks;
+  updateLibraryState(nextLibrary);
 
-  backgrounds = nextBackgrounds;
-  characters = nextCharacters;
-  audioTracks = nextAudioTracks;
-  videoTracks = nextVideoTracks;
+  if (Array.isArray(nextLibrary.layouts) && nextLibrary.layouts.length) {
+    const previousLayout = layoutSelect.value;
+    layouts = nextLibrary.layouts;
+    layoutsById = Object.fromEntries(layouts.map((item) => [item.id, item]));
+    populateSelect(layoutSelect, layouts);
 
-  backgroundsById = Object.fromEntries(backgrounds.map((item) => [item.id, item]));
-  charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
-  audioTracksById = Object.fromEntries(audioTracks.map((item) => [item.id, item]));
-  videoTracksById = Object.fromEntries(videoTracks.map((item) => [item.id, item]));
-
-  const preservedScene = getSceneFromForm();
-  const preservedLeft = Array.isArray(preservedScene.left) ? preservedScene.left : [];
-  const preservedRight = Array.isArray(preservedScene.right) ? preservedScene.right : [];
-
-  populateSelect(backgroundSelect, backgrounds);
-  populateVideoSelect(videoSelect, videoTracks);
-  populateAudioSelect(audioSelect, audioTracks);
-  applyAudioMixLocally(currentAudioMix);
-  updateVideoSelectAvailability();
-
-  leftSelectElements.forEach((slot, index) => {
-    const previousValue = preservedLeft[index] ?? null;
-    populateSelect(slot.characterSelect, characters, { includeEmpty: true });
-    applySlotValue(slot, previousValue);
-  });
-
-  rightSelectElements.forEach((slot, index) => {
-    const previousValue = preservedRight[index] ?? null;
-    populateSelect(slot.characterSelect, characters, { includeEmpty: true });
-    applySlotValue(slot, previousValue);
-  });
-
-  const backgroundValue = backgroundsById[preservedScene.background]
-    ? preservedScene.background
-    : backgrounds[0]?.id ?? '';
-
-  backgroundSelect.value = backgroundValue;
-
-  if (videoSelect) {
-    const videoValue = preservedScene.video && videoTracksById[preservedScene.video]
-      ? preservedScene.video
-      : '';
-    videoSelect.value = videoValue;
+    if (previousLayout && layoutsById[previousLayout]) {
+      layoutSelect.value = previousLayout;
+    }
   }
 
-  updateSceneTypeUI(getSceneTypeFromValue(sceneTypeSelect?.value));
+  if (selectedCampaignId && !campaignsById[selectedCampaignId]) {
+    selectedCampaignId = null;
+  }
 
-  currentScene = getSceneFromForm();
-  renderPreview(currentScene);
+  if (!selectedCampaignId) {
+    const stored = readStoredCampaignId();
+
+    if (stored && campaignsById[stored]) {
+      selectedCampaignId = stored;
+    } else {
+      selectedCampaignId = campaigns[0]?.id ?? null;
+    }
+  }
+
+  const resolvedCampaignId = updateCampaignSelectOptions();
+
+  if (resolvedCampaignId !== null) {
+    selectedCampaignId = resolvedCampaignId;
+  }
+
+  storeSelectedCampaignId(selectedCampaignId);
+
+  const preservedScene = getSceneFromForm();
+
+  filterAssetsForCurrentCampaign();
+  refreshFormOptions({ preservedScene });
 };
 
 const initialise = async () => {
@@ -1682,21 +1905,31 @@ const initialise = async () => {
   const sceneData = await sceneResponse.json();
   const audioData = await audioResponse.json();
 
-  backgrounds = library.backgrounds ?? [];
-  characters = library.characters ?? [];
-  layouts = library.layouts ?? [];
-  audioTracks = library.audioTracks ?? [];
-  videoTracks = library.videoTracks ?? [];
+  updateLibraryState(library);
 
-  if (!layouts.length) {
-    layouts = [{ id: '2v3', label: '2 vs 3', left: 2, right: 3 }];
+  layouts = Array.isArray(library.layouts) && library.layouts.length
+    ? library.layouts
+    : [{ id: '2v3', label: '2 vs 3', left: 2, right: 3 }];
+
+  layoutsById = Object.fromEntries(layouts.map((item) => [item.id, item]));
+
+  const storedCampaignId = readStoredCampaignId();
+
+  if (storedCampaignId && campaignsById[storedCampaignId]) {
+    selectedCampaignId = storedCampaignId;
+  } else {
+    selectedCampaignId = campaigns[0]?.id ?? null;
   }
 
-  backgroundsById = Object.fromEntries(backgrounds.map((item) => [item.id, item]));
-  charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
-  layoutsById = Object.fromEntries(layouts.map((item) => [item.id, item]));
-  audioTracksById = Object.fromEntries(audioTracks.map((item) => [item.id, item]));
-  videoTracksById = Object.fromEntries(videoTracks.map((item) => [item.id, item]));
+  const resolvedInitialCampaign = updateCampaignSelectOptions();
+
+  if (resolvedInitialCampaign !== null) {
+    selectedCampaignId = resolvedInitialCampaign;
+  }
+
+  storeSelectedCampaignId(selectedCampaignId);
+
+  filterAssetsForCurrentCampaign();
 
   populateSelect(layoutSelect, layouts);
   populateSelect(backgroundSelect, backgrounds);
@@ -1719,6 +1952,13 @@ const initialise = async () => {
 
   handleSceneUpdate(sceneData.scene);
 };
+
+if (campaignSelect) {
+  campaignSelect.addEventListener('change', () => {
+    const preservedScene = getSceneFromForm();
+    setSelectedCampaign(campaignSelect.value || null, { preservedScene });
+  });
+}
 
 if (audioSelect) {
   audioSelect.addEventListener('change', () => {
