@@ -21,6 +21,231 @@ const statusByType = {
   track: trackStatus
 };
 
+const audioPlayers = [];
+
+const resetAudioPlayers = () => {
+  audioPlayers.forEach((player) => {
+    if (player?.audio && !player.audio.paused) {
+      player.audio.pause();
+    }
+  });
+
+  audioPlayers.length = 0;
+};
+
+const pauseOtherAudioPlayers = (currentAudio) => {
+  audioPlayers.forEach((player) => {
+    if (!player?.audio || player.audio === currentAudio) {
+      return;
+    }
+
+    if (!player.audio.paused) {
+      player.audio.pause();
+    }
+  });
+};
+
+const formatTrackTimecode = (value) => {
+  if (!Number.isFinite(value) || value < 0) {
+    return '0:00';
+  }
+
+  const totalSeconds = Math.floor(value);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+};
+
+const createAudioPlayer = (asset = {}) => {
+  const container = document.createElement('div');
+  container.className = 'audio-track';
+  container.dataset.state = 'paused';
+
+  const audioElement = document.createElement('audio');
+  audioElement.className = 'audio-track__element';
+  audioElement.src = asset.file || '';
+  audioElement.preload = 'metadata';
+  audioElement.controls = false;
+  container.appendChild(audioElement);
+
+  const controls = document.createElement('div');
+  controls.className = 'audio-track__controls';
+  container.appendChild(controls);
+
+  const trackName = asset.name ? asset.name.trim() : '';
+  const readableName = trackName ? `« ${trackName} »` : 'la piste audio';
+
+  const playButton = document.createElement('button');
+  playButton.type = 'button';
+  playButton.className = 'audio-track__play';
+  playButton.innerHTML = '<span class="audio-track__icon" aria-hidden="true">▶</span>';
+  playButton.setAttribute('aria-label', `Lire ${readableName}`);
+  controls.appendChild(playButton);
+
+  const timeline = document.createElement('div');
+  timeline.className = 'audio-track__timeline';
+  controls.appendChild(timeline);
+
+  const progress = document.createElement('input');
+  progress.type = 'range';
+  progress.className = 'audio-track__progress';
+  progress.min = '0';
+  progress.max = '100';
+  progress.step = '0.1';
+  progress.value = '0';
+  progress.disabled = true;
+  progress.setAttribute('aria-label', `Position dans ${readableName}`);
+  progress.style.setProperty('--progress', '0%');
+  timeline.appendChild(progress);
+
+  const timecodes = document.createElement('div');
+  timecodes.className = 'audio-track__timecodes';
+
+  const currentTimeLabel = document.createElement('span');
+  currentTimeLabel.className = 'audio-track__time audio-track__time--current';
+  currentTimeLabel.textContent = '0:00';
+
+  const separator = document.createElement('span');
+  separator.className = 'audio-track__separator';
+  separator.textContent = '/';
+
+  const durationLabel = document.createElement('span');
+  durationLabel.className = 'audio-track__time audio-track__time--duration';
+  durationLabel.textContent = '--:--';
+
+  timecodes.append(currentTimeLabel, separator, durationLabel);
+  timeline.appendChild(timecodes);
+
+  const setProgress = (value) => {
+    const clamped = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+    progress.value = String(clamped);
+    progress.style.setProperty('--progress', `${clamped}%`);
+  };
+
+  const updatePlayState = (isPlaying) => {
+    container.dataset.state = isPlaying ? 'playing' : 'paused';
+    playButton.innerHTML = `<span class="audio-track__icon" aria-hidden="true">${
+      isPlaying ? '❚❚' : '▶'
+    }</span>`;
+    playButton.setAttribute(
+      'aria-label',
+      `${isPlaying ? 'Mettre en pause' : 'Lire'} ${readableName}`
+    );
+  };
+
+  const updateDurationLabel = () => {
+    if (Number.isFinite(audioElement.duration) && audioElement.duration > 0) {
+      durationLabel.textContent = formatTrackTimecode(audioElement.duration);
+      progress.disabled = false;
+    } else {
+      durationLabel.textContent = '--:--';
+      progress.disabled = true;
+      setProgress(0);
+    }
+  };
+
+  const updateCurrentTime = () => {
+    currentTimeLabel.textContent = formatTrackTimecode(audioElement.currentTime || 0);
+  };
+
+  const syncProgressWithAudio = () => {
+    if (Number.isFinite(audioElement.duration) && audioElement.duration > 0) {
+      const percent = (audioElement.currentTime / audioElement.duration) * 100;
+      setProgress(percent);
+    }
+  };
+
+  const seekToProgress = () => {
+    if (!Number.isFinite(audioElement.duration) || audioElement.duration <= 0) {
+      return;
+    }
+
+    const value = Number(progress.value);
+    const ratio = Math.max(0, Math.min(1, value / 100));
+    audioElement.currentTime = ratio * audioElement.duration;
+  };
+
+  playButton.addEventListener('click', () => {
+    if (!audioElement.src) {
+      return;
+    }
+
+    if (audioElement.paused) {
+      pauseOtherAudioPlayers(audioElement);
+      audioElement.play().catch(() => {
+        /* ignore playback rejection */
+      });
+    } else {
+      audioElement.pause();
+    }
+  });
+
+  progress.addEventListener('input', () => {
+    setProgress(Number(progress.value));
+  });
+
+  progress.addEventListener('change', () => {
+    setProgress(Number(progress.value));
+    seekToProgress();
+    updateCurrentTime();
+  });
+
+  const commitSeek = () => {
+    seekToProgress();
+    updateCurrentTime();
+  };
+
+  progress.addEventListener('pointerup', commitSeek);
+  progress.addEventListener('mouseup', commitSeek);
+  progress.addEventListener('touchend', commitSeek);
+
+  progress.addEventListener('keyup', (event) => {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
+      seekToProgress();
+      updateCurrentTime();
+    }
+  });
+
+  const onMetadata = () => {
+    updateDurationLabel();
+    updateCurrentTime();
+  };
+
+  audioElement.addEventListener('loadedmetadata', onMetadata);
+  audioElement.addEventListener('durationchange', onMetadata);
+
+  audioElement.addEventListener('timeupdate', () => {
+    syncProgressWithAudio();
+    updateCurrentTime();
+  });
+
+  audioElement.addEventListener('play', () => {
+    pauseOtherAudioPlayers(audioElement);
+    updatePlayState(true);
+  });
+
+  audioElement.addEventListener('pause', () => {
+    updatePlayState(false);
+  });
+
+  audioElement.addEventListener('ended', () => {
+    updatePlayState(false);
+    audioElement.currentTime = 0;
+    setProgress(0);
+    updateCurrentTime();
+  });
+
+  audioPlayers.push({ audio: audioElement, updatePlayState });
+
+  return container;
+};
+
 const getTrackStorage = (asset = {}) => {
   const storage = (asset.storage || '').toString().toLowerCase();
 
@@ -79,20 +304,6 @@ const getTrackMediaKind = (asset = {}) => {
     ].includes(normalizedExtension)
   ) {
     return 'audio';
-  }
-
-  return null;
-};
-
-const getTrackStorageLabel = (asset = {}) => {
-  const storage = getTrackStorage(asset);
-
-  if (storage === 'audio') {
-    return 'Audio';
-  }
-
-  if (storage === 'video') {
-    return 'Vidéo';
   }
 
   return null;
@@ -186,16 +397,16 @@ const createAssetCard = (asset, type) => {
     item.classList.add('asset-card--default');
   }
 
-  const figure = document.createElement('figure');
-  figure.className = 'asset-card__figure';
-
   const preview = document.createElement('div');
   preview.className = 'asset-card__preview';
 
   const normalizedType = normaliseTrackType(type);
   const trackStorage = isTrackType(type) ? getTrackStorage(asset) : null;
-  const trackStorageLabel = isTrackType(type) ? getTrackStorageLabel(asset) : null;
   const trackMediaKind = isTrackType(type) ? getTrackMediaKind(asset) : null;
+  const trackKind = trackMediaKind || trackStorage;
+
+  const figure = document.createElement('figure');
+  figure.className = 'asset-card__figure';
 
   if (asset.image) {
     const image = document.createElement('img');
@@ -203,11 +414,19 @@ const createAssetCard = (asset, type) => {
     image.alt = asset.name || (type === 'character' ? 'Personnage' : 'Décor');
     preview.appendChild(image);
   } else if (isTrackType(type)) {
+    item.classList.add('asset-card--track');
     preview.classList.add('asset-card__preview--track');
+    const mediaKind = trackKind;
+
+    if (mediaKind === 'video') {
+      item.classList.add('asset-card--video');
+      preview.classList.add('asset-card__preview--video');
+    } else if (mediaKind === 'audio') {
+      item.classList.add('asset-card--audio');
+      preview.classList.add('asset-card__preview--audio');
+    }
 
     if (asset.file) {
-      const mediaKind = trackMediaKind || trackStorage;
-
       if (mediaKind === 'video') {
         const video = document.createElement('video');
         video.src = asset.file;
@@ -215,7 +434,10 @@ const createAssetCard = (asset, type) => {
         video.preload = 'metadata';
         video.muted = true;
         video.playsInline = true;
+        video.classList.add('asset-card__video');
         preview.appendChild(video);
+      } else if (mediaKind === 'audio') {
+        preview.appendChild(createAudioPlayer(asset));
       } else {
         const audio = document.createElement('audio');
         audio.src = asset.file;
@@ -230,59 +452,42 @@ const createAssetCard = (asset, type) => {
       preview.appendChild(icon);
     }
 
-    if (trackStorageLabel) {
-      const badge = document.createElement('span');
-      badge.className = 'asset-card__badge';
-      badge.textContent = trackStorageLabel;
-
-      if (trackStorage) {
-        badge.classList.add(`asset-card__badge--${trackStorage}`);
-        badge.dataset.storage = trackStorage;
-      }
-
-      preview.appendChild(badge);
-    }
+    // No additional badge for tracks – the preview and title are sufficient.
   } else if (type === 'background') {
     preview.style.background = asset.background || '#1e293b';
   } else {
     preview.style.background = asset.color || '#1e293b';
   }
 
-  figure.appendChild(preview);
-
   const caption = document.createElement('figcaption');
   caption.className = 'asset-card__caption';
   caption.textContent = asset.name || 'Sans titre';
-  figure.appendChild(caption);
+
+  if (trackKind === 'audio') {
+    caption.classList.add('asset-card__caption--track');
+    figure.appendChild(caption);
+    figure.appendChild(preview);
+  } else {
+    figure.appendChild(preview);
+    figure.appendChild(caption);
+  }
 
   item.appendChild(figure);
 
-  const origin = document.createElement('p');
-  origin.className = 'asset-card__meta';
-  origin.textContent = asset.origin === 'upload' ? 'Importé' : 'Préconfiguré';
-  item.appendChild(origin);
+  if (!isTrackType(type)) {
+    const origin = document.createElement('p');
+    origin.className = 'asset-card__meta';
+    origin.textContent = asset.origin === 'upload' ? 'Importé' : 'Préconfiguré';
+    item.appendChild(origin);
 
-  if (isTrackType(type) && trackStorageLabel) {
-    const storageElement = document.createElement('p');
-    storageElement.className = 'asset-card__meta';
-    storageElement.textContent = `Stockage : ${trackStorageLabel}`;
-    item.appendChild(storageElement);
-  }
+    const formattedDate = formatDateTime(asset.createdAt);
 
-  if (isTrackType(type) && asset.mimeType) {
-    const mimeElement = document.createElement('p');
-    mimeElement.className = 'asset-card__meta asset-card__meta--muted';
-    mimeElement.textContent = `Format : ${asset.mimeType}`;
-    item.appendChild(mimeElement);
-  }
-
-  const formattedDate = formatDateTime(asset.createdAt);
-
-  if (formattedDate && asset.origin === 'upload') {
-    const dateElement = document.createElement('p');
-    dateElement.className = 'asset-card__meta asset-card__meta--muted';
-    dateElement.textContent = `Ajouté le ${formattedDate}`;
-    item.appendChild(dateElement);
+    if (formattedDate && asset.origin === 'upload') {
+      const dateElement = document.createElement('p');
+      dateElement.className = 'asset-card__meta asset-card__meta--muted';
+      dateElement.textContent = `Ajouté le ${formattedDate}`;
+      item.appendChild(dateElement);
+    }
   }
 
   if (asset.origin === 'upload') {
@@ -318,6 +523,10 @@ const defaultEmptyMessages = {
 const renderAssetList = (listElement, assets, type, countElement, options = {}) => {
   if (!listElement) {
     return;
+  }
+
+  if (type === 'track-audio') {
+    resetAudioPlayers();
   }
 
   listElement.innerHTML = '';
