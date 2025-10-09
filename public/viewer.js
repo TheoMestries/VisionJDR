@@ -5,8 +5,11 @@ const rightColumn = document.getElementById('right-column');
 
 let backgroundsById = {};
 let charactersById = {};
+let audioTracksById = {};
 let latestScene = null;
 let resizeFrame = null;
+let latestAudioMix = { tracks: [] };
+const audioPlayers = new Map();
 
 const updateStackingForColumn = (columnElement) => {
   if (!columnElement) {
@@ -202,13 +205,170 @@ const renderScene = (scene) => {
   }
 };
 
+const sanitiseAudioMix = (mix) => {
+  if (!mix || typeof mix !== 'object') {
+    return [];
+  }
+
+  const entries = Array.isArray(mix.tracks) ? mix.tracks : [];
+  const seen = new Set();
+  const tracks = [];
+
+  entries.forEach((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return;
+    }
+
+    const id = (entry.id || '').toString();
+
+    if (!id || seen.has(id)) {
+      return;
+    }
+
+    const asset = audioTracksById[id];
+
+    if (!asset || !asset.file) {
+      return;
+    }
+
+    const volumeInput = Number(entry.volume);
+    const volume = Number.isFinite(volumeInput)
+      ? Math.max(0, Math.min(1, volumeInput))
+      : 1;
+    const loop = Boolean(entry.loop);
+
+    seen.add(id);
+    tracks.push({ id, volume, loop });
+  });
+
+  return tracks;
+};
+
+const stopAudioPlayer = (player) => {
+  if (!player || !player.audio) {
+    return;
+  }
+
+  player.audio.pause();
+
+  try {
+    player.audio.currentTime = 0;
+  } catch (error) {
+    // Ignore reset errors that can happen on certain browsers.
+  }
+};
+
+const applyAudioMix = (mix) => {
+  const tracks = sanitiseAudioMix(mix);
+  const activeIds = new Set();
+
+  tracks.forEach((track) => {
+    const asset = audioTracksById[track.id];
+
+    if (!asset || !asset.file) {
+      return;
+    }
+
+    activeIds.add(track.id);
+
+    const source = asset.file;
+    let player = audioPlayers.get(track.id);
+
+    if (!player) {
+      const audioElement = new Audio(source);
+      audioElement.loop = Boolean(track.loop);
+      audioElement.volume = track.volume ?? 1;
+      audioElement.preload = 'auto';
+      player = { audio: audioElement, source };
+      audioPlayers.set(track.id, player);
+      audioElement.play().catch(() => {
+        /* Autoplay might be blocked; ignore rejection. */
+      });
+      return;
+    }
+
+    const { audio } = player;
+
+    if (player.source !== source) {
+      audio.pause();
+      audio.src = source;
+      player.source = source;
+
+      try {
+        audio.currentTime = 0;
+      } catch (error) {
+        /* ignore reset failure */
+      }
+    }
+
+    audio.loop = Boolean(track.loop);
+    audio.volume = track.volume ?? 1;
+
+    if (audio.paused || audio.ended) {
+      if (audio.ended || (audio.duration && audio.currentTime >= audio.duration)) {
+        try {
+          audio.currentTime = 0;
+        } catch (error) {
+          /* ignore reset failure */
+        }
+      }
+
+      audio.play().catch(() => {
+        /* ignore autoplay issues */
+      });
+    }
+  });
+
+  audioPlayers.forEach((player, id) => {
+    if (!activeIds.has(id)) {
+      stopAudioPlayer(player);
+      audioPlayers.delete(id);
+    }
+  });
+
+  latestAudioMix = { tracks };
+  return latestAudioMix;
+};
+
+const handleLibraryUpdate = (library) => {
+  if (!library || typeof library !== 'object') {
+    return;
+  }
+
+  backgroundsById = Object.fromEntries(
+    (Array.isArray(library.backgrounds) ? library.backgrounds : []).map((item) => [
+      item.id,
+      item
+    ])
+  );
+  charactersById = Object.fromEntries(
+    (Array.isArray(library.characters) ? library.characters : []).map((item) => [
+      item.id,
+      item
+    ])
+  );
+  audioTracksById = Object.fromEntries(
+    (Array.isArray(library.audioTracks) ? library.audioTracks : []).map((item) => [
+      item.id,
+      item
+    ])
+  );
+
+  if (latestScene) {
+    renderScene(latestScene);
+  }
+
+  applyAudioMix(latestAudioMix);
+};
+
 const initialise = async () => {
-  const [libraryResponse, sceneResponse] = await Promise.all([
+  const [libraryResponse, sceneResponse, audioResponse] = await Promise.all([
     fetch('/api/library'),
-    fetch('/api/scene')
+    fetch('/api/scene'),
+    fetch('/api/audio')
   ]);
 
-  if (!libraryResponse.ok || !sceneResponse.ok) {
+  if (!libraryResponse.ok || !sceneResponse.ok || !audioResponse.ok) {
     if (subtitleElement) {
       subtitleElement.textContent = 'Impossible de charger les scènes';
     }
@@ -217,14 +377,17 @@ const initialise = async () => {
 
   const library = await libraryResponse.json();
   const sceneData = await sceneResponse.json();
+  const audioData = await audioResponse.json();
 
-  backgroundsById = Object.fromEntries(library.backgrounds.map((item) => [item.id, item]));
-  charactersById = Object.fromEntries(library.characters.map((item) => [item.id, item]));
+  handleLibraryUpdate(library);
 
   renderScene(sceneData.scene);
+  applyAudioMix(audioData.mix);
 
   const socket = io();
   socket.on('scene:update', renderScene);
+  socket.on('library:update', handleLibraryUpdate);
+  socket.on('audio:update', applyAudioMix);
 };
 
 initialise();

@@ -198,6 +198,86 @@ let library = {
   videoTracks: [],
   layouts: []
 };
+let currentAudioMix = { tracks: [] };
+
+const normaliseAudioMixTrack = (entry) => {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+
+  const trackId = (entry.id || '').toString();
+
+  if (!trackId) {
+    return null;
+  }
+
+  const track = tracksById[trackId];
+
+  if (!track || detectTrackKind(track) !== 'audio') {
+    return null;
+  }
+
+  const volumeInput = Number(entry.volume);
+  const volume = Number.isFinite(volumeInput)
+    ? Math.max(0, Math.min(1, volumeInput))
+    : 1;
+  const loop = Boolean(entry.loop);
+
+  return { id: track.id, volume, loop };
+};
+
+const normaliseAudioMix = (mix) => {
+  if (!mix || typeof mix !== 'object') {
+    return { tracks: [] };
+  }
+
+  const inputTracks = Array.isArray(mix.tracks) ? mix.tracks : [];
+  const seen = new Set();
+  const tracks = [];
+
+  inputTracks.forEach((entry) => {
+    const normalised = normaliseAudioMixTrack(entry);
+
+    if (!normalised || seen.has(normalised.id)) {
+      return;
+    }
+
+    seen.add(normalised.id);
+    tracks.push(normalised);
+  });
+
+  return { tracks };
+};
+
+const areAudioMixesEqual = (a, b) => {
+  const aTracks = Array.isArray(a?.tracks) ? a.tracks : [];
+  const bTracks = Array.isArray(b?.tracks) ? b.tracks : [];
+
+  if (aTracks.length !== bTracks.length) {
+    return false;
+  }
+
+  return aTracks.every((track, index) => {
+    const other = bTracks[index];
+
+    if (!other) {
+      return false;
+    }
+
+    const volumeDelta = Math.abs((track.volume ?? 1) - (other.volume ?? 1));
+
+    return track.id === other.id && track.loop === other.loop && volumeDelta < 0.0001;
+  });
+};
+
+const setAudioMix = (mix) => {
+  const normalised = normaliseAudioMix(mix);
+
+  if (!areAudioMixesEqual(currentAudioMix, normalised)) {
+    currentAudioMix = normalised;
+    io.emit('audio:update', currentAudioMix);
+  }
+};
 
 const splitTracksByKind = (collection) => {
   const audio = [];
@@ -234,6 +314,16 @@ const refreshLibrary = () => {
     videoTracks: video,
     layouts: sceneLayouts
   };
+
+  const previousMix = currentAudioMix;
+  const normalisedMix = normaliseAudioMix(previousMix);
+
+  if (!areAudioMixesEqual(previousMix, normalisedMix)) {
+    currentAudioMix = normalisedMix;
+    io.emit('audio:update', currentAudioMix);
+  } else {
+    currentAudioMix = normalisedMix;
+  }
 };
 
 const persistCustomLibrary = () => {
@@ -440,6 +530,10 @@ app.get('/admin/assets', (req, res) => {
 
 app.get('/api/library', (req, res) => {
   res.json(library);
+});
+
+app.get('/api/audio', (req, res) => {
+  res.json({ mix: currentAudioMix });
 });
 
 app.get('/api/assets/custom', (req, res) => {
@@ -692,6 +786,7 @@ const normaliseScene = (scene) => {
 
 io.on('connection', (socket) => {
   socket.emit('scene:update', currentScene);
+  socket.emit('audio:update', currentAudioMix);
 
   socket.on('scene:display', (scene) => {
     const validatedScene = normaliseScene(scene);
@@ -702,6 +797,10 @@ io.on('connection', (socket) => {
 
     currentScene = validatedScene;
     io.emit('scene:update', currentScene);
+  });
+
+  socket.on('audio:set', (mix) => {
+    setAudioMix(mix);
   });
 
   socket.on('disconnect', () => {
