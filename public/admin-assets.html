@@ -77,6 +77,36 @@
           </div>
         </form>
 
+        <form
+          id="track-upload-form"
+          class="admin-form admin-form--upload"
+          autocomplete="off"
+          enctype="multipart/form-data"
+        >
+          <h2>Ajouter une piste audio/vidéo</h2>
+          <p class="admin-form__description">
+            Importez une musique ou une ambiance (MP4, MP3, OGG) à diffuser pendant vos
+            sessions.
+          </p>
+          <label class="field">
+            <span class="field__label">Nom de la piste</span>
+            <input type="text" name="name" placeholder="Ex. Ambiance taverne" />
+          </label>
+          <label class="field">
+            <span class="field__label">Fichier (MP4, MP3, OGG)</span>
+            <input
+              type="file"
+              name="file"
+              accept="audio/*,video/mp4,video/mpeg,video/quicktime"
+              required
+            />
+          </label>
+          <div class="form__actions">
+            <button class="button" type="submit">Enregistrer</button>
+            <span class="form__status" id="track-upload-status" role="status"></span>
+          </div>
+        </form>
+
         <section class="asset-gallery" aria-live="polite">
           <h2>Médias enregistrés</h2>
           <div class="asset-gallery__grid">
@@ -93,6 +123,13 @@
                 <span class="asset-group__count" id="background-count">0</span>
               </div>
               <ul class="asset-list" id="background-assets"></ul>
+            </article>
+            <article class="asset-group">
+              <div class="asset-group__header">
+                <h3>Musiques</h3>
+                <span class="asset-group__count" id="track-count">0</span>
+              </div>
+              <ul class="asset-list" id="track-assets"></ul>
             </article>
           </div>
         </section>

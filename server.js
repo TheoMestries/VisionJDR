@@ -16,6 +16,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
 const CHARACTER_UPLOADS_DIR = path.join(UPLOADS_DIR, 'characters');
 const BACKGROUND_UPLOADS_DIR = path.join(UPLOADS_DIR, 'backgrounds');
+const TRACK_UPLOADS_DIR = path.join(UPLOADS_DIR, 'tracks');
 const LIBRARY_FILE = path.join(DATA_DIR, 'library.json');
 
 const ensureDirectory = (directory) => {
@@ -28,6 +29,7 @@ ensureDirectory(DATA_DIR);
 ensureDirectory(UPLOADS_DIR);
 ensureDirectory(CHARACTER_UPLOADS_DIR);
 ensureDirectory(BACKGROUND_UPLOADS_DIR);
+ensureDirectory(TRACK_UPLOADS_DIR);
 
 const defaultBackgrounds = [
   {
@@ -98,12 +100,13 @@ const loadCustomLibrary = () => {
   const stored = safeReadJson(LIBRARY_FILE);
 
   if (!stored) {
-    return { backgrounds: [], characters: [] };
+    return { backgrounds: [], characters: [], tracks: [] };
   }
 
   return {
     backgrounds: Array.isArray(stored.backgrounds) ? stored.backgrounds : [],
-    characters: Array.isArray(stored.characters) ? stored.characters : []
+    characters: Array.isArray(stored.characters) ? stored.characters : [],
+    tracks: Array.isArray(stored.tracks) ? stored.tracks : []
   };
 };
 
@@ -112,15 +115,19 @@ let backgrounds = [];
 let characters = [];
 let backgroundsById = {};
 let charactersById = {};
-let library = { backgrounds: [], characters: [], layouts: [] };
+let tracks = [];
+let tracksById = {};
+let library = { backgrounds: [], characters: [], tracks: [], layouts: [] };
 
 const refreshLibrary = () => {
   backgrounds = [...defaultBackgrounds, ...(customLibrary.backgrounds ?? [])];
   characters = [...defaultCharacters, ...(customLibrary.characters ?? [])];
+  tracks = [...(customLibrary.tracks ?? [])];
 
   backgroundsById = Object.fromEntries(backgrounds.map((item) => [item.id, item]));
   charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
-  library = { backgrounds, characters, layouts: sceneLayouts };
+  tracksById = Object.fromEntries(tracks.map((item) => [item.id, item]));
+  library = { backgrounds, characters, tracks, layouts: sceneLayouts };
 };
 
 const persistCustomLibrary = () => {
@@ -196,6 +203,20 @@ const imageFileFilter = (req, file, callback) => {
 
 const uploadLimits = { fileSize: 8 * 1024 * 1024 };
 
+const trackFileFilter = (req, file, callback) => {
+  const isAudio = file.mimetype.startsWith('audio/');
+  const isVideo = ['video/mp4', 'video/mpeg', 'video/quicktime'].includes(file.mimetype);
+
+  if (!isAudio && !isVideo) {
+    callback(new Error('Seuls les fichiers audio ou vidéo MP4 sont autorisés.'));
+    return;
+  }
+
+  callback(null, true);
+};
+
+const trackUploadLimits = { fileSize: 64 * 1024 * 1024 };
+
 const characterUpload = multer({
   storage: multer.diskStorage({
     destination: CHARACTER_UPLOADS_DIR,
@@ -216,6 +237,17 @@ const backgroundUpload = multer({
   }),
   fileFilter: imageFileFilter,
   limits: uploadLimits
+});
+
+const trackUpload = multer({
+  storage: multer.diskStorage({
+    destination: TRACK_UPLOADS_DIR,
+    filename: (req, file, callback) => {
+      callback(null, createFileName(file.originalname));
+    }
+  }),
+  fileFilter: trackFileFilter,
+  limits: trackUploadLimits
 });
 
 const withUploader = (uploader) => (req, res, next) => {
@@ -298,7 +330,8 @@ app.get('/api/library', (req, res) => {
 app.get('/api/assets/custom', (req, res) => {
   res.json({
     backgrounds: customLibrary.backgrounds ?? [],
-    characters: customLibrary.characters ?? []
+    characters: customLibrary.characters ?? [],
+    tracks: customLibrary.tracks ?? []
   });
 });
 
@@ -365,9 +398,13 @@ const createAssetDeletionHandler = (collectionKey) => (req, res) => {
 
   collection.splice(assetIndex, 1);
 
-  if (asset.image) {
-    removeUploadFile(asset.image);
-  }
+  ['image', 'file', 'source'].forEach((key) => {
+    const value = asset[key];
+
+    if (value) {
+      removeUploadFile(value);
+    }
+  });
 
   persistCustomLibrary();
   refreshLibrary();
@@ -417,6 +454,41 @@ app.post(
 
 app.delete('/api/assets/characters/:id', createAssetDeletionHandler('characters'));
 app.delete('/api/assets/backgrounds/:id', createAssetDeletionHandler('backgrounds'));
+app.post(
+  '/api/assets/tracks',
+  withUploader(trackUpload.single('file')),
+  (req, res) => {
+    const uploadedFile = req.file;
+    const nameInput = (req.body?.name || '').toString().trim();
+
+    if (!uploadedFile) {
+      res.status(400).json({ error: "Aucun fichier média n'a été envoyé." });
+      return;
+    }
+
+    const displayName = nameInput || uploadedFile.originalname;
+    const trackId = createAssetId('track', displayName);
+    const publicPath = `/uploads/tracks/${uploadedFile.filename}`;
+    const track = {
+      id: trackId,
+      name: displayName,
+      file: publicPath,
+      mimeType: uploadedFile.mimetype,
+      origin: 'upload',
+      createdAt: new Date().toISOString()
+    };
+
+    const collection = ensureCustomCollection('tracks');
+    collection.push(track);
+    persistCustomLibrary();
+    refreshLibrary();
+
+    io.emit('library:update', library);
+
+    res.status(201).json({ track });
+  }
+);
+app.delete('/api/assets/tracks/:id', createAssetDeletionHandler('tracks'));
 
 app.get('/api/scene', (req, res) => {
   res.json({ scene: currentScene });
