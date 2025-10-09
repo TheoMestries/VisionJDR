@@ -2,6 +2,11 @@ const sceneElement = document.getElementById('scene');
 const subtitleElement = document.querySelector('.top-bar__subtitle');
 const leftColumn = document.getElementById('left-column');
 const rightColumn = document.getElementById('right-column');
+const viewerControls = document.getElementById('viewer-controls');
+const volumePanel = viewerControls?.querySelector('.viewer-controls__panel') ?? null;
+const volumeToggle = viewerControls?.querySelector('.viewer-controls__toggle') ?? null;
+const volumeSlider = viewerControls?.querySelector('.viewer-controls__slider') ?? null;
+const volumeValue = viewerControls?.querySelector('.viewer-controls__value') ?? null;
 
 let backgroundsById = {};
 let charactersById = {};
@@ -11,108 +16,51 @@ let resizeFrame = null;
 let latestAudioMix = { tracks: [] };
 const audioPlayers = new Map();
 const AUDIO_SEEK_THRESHOLD = 0.25;
+const LOCAL_STORAGE_VOLUME_KEY = 'viewer:volume';
+
+let globalVolume = 1;
 
 const audioUnlockState = {
   unlocked: false,
   requested: false,
-  prompt: null,
   pointerHandler: null
 };
 
-const hideAudioUnlockPrompt = () => {
-  if (audioUnlockState.pointerHandler) {
-    window.removeEventListener('pointerdown', audioUnlockState.pointerHandler);
-    audioUnlockState.pointerHandler = null;
+const clampVolume = (value) => {
+  if (!Number.isFinite(value)) {
+    return 1;
   }
 
-  if (audioUnlockState.prompt) {
-    audioUnlockState.prompt.hidden = true;
-    audioUnlockState.prompt.setAttribute('aria-hidden', 'true');
-  }
-
-  audioUnlockState.requested = false;
+  return Math.max(0, Math.min(1, value));
 };
 
-const markAudioUnlocked = () => {
-  if (audioUnlockState.unlocked) {
-    return;
-  }
-
-  audioUnlockState.unlocked = true;
-  hideAudioUnlockPrompt();
+const computeEffectiveVolume = (volume) => {
+  const base = Number.isFinite(volume) ? volume : 1;
+  return clampVolume(base * globalVolume);
 };
 
-const unlockAudioPlayback = () => {
-  const players = Array.from(audioPlayers.values());
-
-  if (!players.length) {
-    markAudioUnlocked();
-    return;
-  }
-
-  players.forEach((player) => {
-    const { audio, desiredVolume } = player;
-
-    try {
-      audio.muted = false;
-      if (Number.isFinite(desiredVolume)) {
-        audio.volume = desiredVolume;
-      }
-
-      const playResult = audio.play();
-
-      if (playResult && typeof playResult.then === 'function') {
-        playResult.catch(() => {
-          /* Ignore unlock errors to avoid breaking other players. */
-        });
-      }
-    } catch (error) {
-      /* Intentionally ignore playback errors during unlock attempts. */
+const updateAllPlayerVolumes = () => {
+  audioPlayers.forEach((player) => {
+    if (!player || !player.audio) {
+      return;
     }
+
+    player.audio.volume = computeEffectiveVolume(player.desiredVolume);
   });
-
-  markAudioUnlocked();
 };
 
-const requestAudioUnlock = () => {
-  if (audioUnlockState.unlocked) {
-    return;
-  }
-
-  if (!audioUnlockState.prompt) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'audio-unlock';
-    button.textContent = 'Activer le son';
-    button.hidden = true;
-    button.setAttribute('aria-hidden', 'true');
-    button.addEventListener('click', unlockAudioPlayback);
-    document.body.appendChild(button);
-    audioUnlockState.prompt = button;
-  }
-
-  if (!audioUnlockState.requested) {
-    audioUnlockState.requested = true;
-
-    if (audioUnlockState.prompt) {
-      audioUnlockState.prompt.hidden = false;
-      audioUnlockState.prompt.removeAttribute('aria-hidden');
-    }
-
-    if (!audioUnlockState.pointerHandler) {
-      audioUnlockState.pointerHandler = () => {
-        audioUnlockState.pointerHandler = null;
-        unlockAudioPlayback();
-      };
-
-      window.addEventListener('pointerdown', audioUnlockState.pointerHandler, { once: true });
-    }
+const persistGlobalVolume = (value) => {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_VOLUME_KEY, value.toString());
+  } catch (error) {
+    /* Ignore persistence errors (e.g., storage disabled). */
   }
 };
 
 const createAudioPlayer = (source) => {
   const audioElement = new Audio(source);
   audioElement.preload = 'auto';
+  audioElement.volume = computeEffectiveVolume(1);
 
   const player = {
     audio: audioElement,
@@ -203,6 +151,71 @@ const seekAudioPlayer = (player, position) => {
   }
 
   player.pendingSeek = position;
+};
+
+const cancelAudioUnlockRequest = () => {
+  if (audioUnlockState.pointerHandler) {
+    window.removeEventListener('pointerdown', audioUnlockState.pointerHandler);
+    audioUnlockState.pointerHandler = null;
+  }
+
+  audioUnlockState.requested = false;
+};
+
+const markAudioUnlocked = () => {
+  if (audioUnlockState.unlocked) {
+    return;
+  }
+
+  audioUnlockState.unlocked = true;
+  cancelAudioUnlockRequest();
+};
+
+const unlockAudioPlayback = () => {
+  const players = Array.from(audioPlayers.values());
+
+  if (!players.length) {
+    markAudioUnlocked();
+    return;
+  }
+
+  players.forEach((player) => {
+    const { audio, desiredVolume } = player;
+
+    try {
+      audio.muted = false;
+      audio.volume = computeEffectiveVolume(desiredVolume);
+
+      const playResult = audio.play();
+
+      if (playResult && typeof playResult.then === 'function') {
+        playResult.catch(() => {
+          /* Ignore unlock errors to avoid breaking other players. */
+        });
+      }
+    } catch (error) {
+      /* Intentionally ignore playback errors during unlock attempts. */
+    }
+  });
+
+  markAudioUnlocked();
+};
+
+const requestAudioUnlock = () => {
+  if (audioUnlockState.unlocked || audioUnlockState.requested) {
+    return;
+  }
+
+  audioUnlockState.requested = true;
+
+  if (!audioUnlockState.pointerHandler) {
+    audioUnlockState.pointerHandler = () => {
+      audioUnlockState.pointerHandler = null;
+      unlockAudioPlayback();
+    };
+
+    window.addEventListener('pointerdown', audioUnlockState.pointerHandler, { once: true });
+  }
 };
 
 const updateStackingForColumn = (columnElement) => {
@@ -506,7 +519,7 @@ const applyAudioMix = (mix) => {
         try {
           playResult = audio.play();
         } catch (error) {
-          audio.volume = desiredVolume;
+          audio.volume = computeEffectiveVolume(desiredVolume);
 
           if (error?.name === 'NotAllowedError' || error?.name === 'NotSupportedError') {
             requestAudioUnlock();
@@ -518,22 +531,22 @@ const applyAudioMix = (mix) => {
         if (playResult && typeof playResult.then === 'function') {
           playResult
             .then(() => {
-              audio.volume = desiredVolume;
+              audio.volume = computeEffectiveVolume(desiredVolume);
               markAudioUnlocked();
             })
             .catch((error) => {
-              audio.volume = desiredVolume;
+              audio.volume = computeEffectiveVolume(desiredVolume);
 
               if (error?.name === 'NotAllowedError' || error?.name === 'NotSupportedError') {
                 requestAudioUnlock();
               }
             });
         } else {
-          audio.volume = desiredVolume;
+          audio.volume = computeEffectiveVolume(desiredVolume);
           markAudioUnlocked();
         }
       } else {
-        audio.volume = desiredVolume;
+        audio.volume = computeEffectiveVolume(desiredVolume);
       }
     } else if (!audio.paused) {
       audio.pause();
@@ -549,7 +562,7 @@ const applyAudioMix = (mix) => {
 
   latestAudioMix = { tracks };
   if (tracks.length === 0) {
-    hideAudioUnlockPrompt();
+    cancelAudioUnlockRequest();
   }
   return latestAudioMix;
 };
@@ -615,6 +628,128 @@ const initialise = async () => {
 };
 
 initialise();
+
+const updateVolumeUI = (volume) => {
+  if (!volumeSlider || !volumeValue) {
+    return;
+  }
+
+  const percent = Math.round(volume * 100);
+  volumeSlider.value = String(percent);
+  volumeSlider.setAttribute('aria-valuenow', String(percent));
+  volumeValue.textContent = `${percent}%`;
+};
+
+const setGlobalVolume = (volume) => {
+  globalVolume = clampVolume(volume);
+  updateVolumeUI(globalVolume);
+  updateAllPlayerVolumes();
+  persistGlobalVolume(globalVolume);
+};
+
+const loadStoredVolume = () => {
+  try {
+    const rawValue = localStorage.getItem(LOCAL_STORAGE_VOLUME_KEY);
+
+    if (rawValue === null || rawValue === undefined) {
+      return null;
+    }
+
+    const parsed = Number.parseFloat(rawValue);
+
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+
+    return clampVolume(parsed);
+  } catch (error) {
+    return null;
+  }
+};
+
+const initialiseVolumeControls = () => {
+  const storedVolume = loadStoredVolume();
+
+  if (storedVolume !== null) {
+    globalVolume = clampVolume(storedVolume);
+  }
+
+  updateVolumeUI(globalVolume);
+  updateAllPlayerVolumes();
+
+  if (volumeToggle && volumePanel) {
+    const closePanel = () => {
+      if (volumePanel.hasAttribute('hidden')) {
+        return;
+      }
+
+      volumePanel.hidden = true;
+      volumeToggle.setAttribute('aria-expanded', 'false');
+    };
+
+    const openPanel = () => {
+      if (!volumePanel.hasAttribute('hidden')) {
+        return;
+      }
+
+      volumePanel.hidden = false;
+      volumeToggle.setAttribute('aria-expanded', 'true');
+      volumePanel.focus?.();
+    };
+
+    const togglePanel = () => {
+      if (volumePanel.hasAttribute('hidden')) {
+        openPanel();
+      } else {
+        closePanel();
+      }
+    };
+
+    volumeToggle.addEventListener('click', (event) => {
+      event.stopPropagation();
+      togglePanel();
+    });
+
+    viewerControls.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      closePanel();
+      volumeToggle.focus();
+    });
+
+    document.addEventListener('pointerdown', (event) => {
+      if (!viewerControls || volumePanel.hasAttribute('hidden')) {
+        return;
+      }
+
+      if (event.target instanceof Node && viewerControls.contains(event.target)) {
+        return;
+      }
+
+      closePanel();
+    });
+
+    window.addEventListener('blur', closePanel);
+  }
+
+  if (volumeSlider) {
+    volumeSlider.addEventListener('input', (event) => {
+      const target = event.target;
+
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+
+      const percent = Number.parseFloat(target.value);
+      const volume = clampVolume(percent / 100);
+      setGlobalVolume(volume);
+    });
+  }
+};
+
+initialiseVolumeControls();
 
 window.addEventListener('resize', () => {
   if (!latestScene) {
