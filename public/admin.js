@@ -439,15 +439,18 @@ const seekAdminAudioPlayer = (player, position) => {
   }
 
   const { audio } = player;
-  const difference = Math.abs((audio.currentTime ?? 0) - position);
-  const requiresSeek =
-    player.lastPosition === undefined ||
-    difference > AUDIO_SEEK_THRESHOLD ||
-    audio.paused;
+  const previousTarget = player.lastPosition;
+  const hasNewTarget =
+    previousTarget === undefined ||
+    Math.abs(previousTarget - position) > AUDIO_SEEK_THRESHOLD;
+  const currentDifference = Math.abs((audio.currentTime ?? 0) - position);
+  const shouldSeek =
+    hasNewTarget ||
+    (audio.paused && currentDifference > AUDIO_SEEK_THRESHOLD);
 
   player.lastPosition = position;
 
-  if (!requiresSeek) {
+  if (!shouldSeek) {
     return;
   }
 
