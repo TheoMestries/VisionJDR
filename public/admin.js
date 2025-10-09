@@ -9,6 +9,10 @@ const statusElement = document.getElementById('form-status');
 const previewScene = document.getElementById('preview-scene');
 const previewLeft = document.getElementById('preview-left');
 const previewRight = document.getElementById('preview-right');
+const audioSelect = document.getElementById('audio-track');
+const audioAddButton = document.querySelector('.audio-mixer__add');
+const audioActiveList = document.getElementById('audio-active-list');
+const audioEmptyState = document.getElementById('audio-empty');
 
 let socket;
 let backgrounds = [];
@@ -22,6 +26,9 @@ let currentLayout = null;
 let leftSelectElements = [];
 let rightSelectElements = [];
 let previewLayoutFrame = null;
+let audioTracks = [];
+let audioTracksById = {};
+let currentAudioMix = { tracks: [] };
 
 const ORIENTATION_NORMAL = 'normal';
 const ORIENTATION_MIRRORED = 'mirrored';
@@ -305,6 +312,284 @@ const populateSelect = (select, options, { includeEmpty = false } = {}) => {
   });
 };
 
+const populateAudioSelect = (select, tracks) => {
+  if (!select) {
+    return;
+  }
+
+  select.innerHTML = '';
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = tracks.length
+    ? 'Sélectionnez une piste audio'
+    : 'Aucune piste audio disponible';
+  placeholder.selected = true;
+  placeholder.dataset.placeholder = 'true';
+  select.appendChild(placeholder);
+
+  tracks.forEach((track) => {
+    const option = document.createElement('option');
+    option.value = track.id;
+    option.textContent = track.name || 'Piste audio';
+    select.appendChild(option);
+  });
+};
+
+const sanitiseAudioMix = (mix) => {
+  if (!mix || typeof mix !== 'object') {
+    return { tracks: [] };
+  }
+
+  const entries = Array.isArray(mix.tracks) ? mix.tracks : [];
+  const seen = new Set();
+  const tracks = [];
+
+  entries.forEach((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return;
+    }
+
+    const id = (entry.id || '').toString();
+
+    if (!id || seen.has(id) || !audioTracksById[id]) {
+      return;
+    }
+
+    const volumeInput = Number(entry.volume);
+    const volume = Number.isFinite(volumeInput)
+      ? Math.max(0, Math.min(1, volumeInput))
+      : 1;
+    const loop = Boolean(entry.loop);
+
+    seen.add(id);
+    tracks.push({ id, volume, loop });
+  });
+
+  return { tracks };
+};
+
+const areAudioMixesEqual = (a, b) => {
+  const aTracks = Array.isArray(a?.tracks) ? a.tracks : [];
+  const bTracks = Array.isArray(b?.tracks) ? b.tracks : [];
+
+  if (aTracks.length !== bTracks.length) {
+    return false;
+  }
+
+  return aTracks.every((track, index) => {
+    const other = bTracks[index];
+
+    if (!other) {
+      return false;
+    }
+
+    const volumeDelta = Math.abs((track.volume ?? 1) - (other.volume ?? 1));
+
+    return track.id === other.id && track.loop === other.loop && volumeDelta < 0.0001;
+  });
+};
+
+function updateAudioSelectOptions() {
+  if (!audioSelect) {
+    return;
+  }
+
+  const activeIds = new Set(
+    (Array.isArray(currentAudioMix.tracks) ? currentAudioMix.tracks : []).map(
+      (track) => track.id
+    )
+  );
+
+  Array.from(audioSelect.options).forEach((option) => {
+    if (!option.value) {
+      option.disabled = audioTracks.length === 0;
+      return;
+    }
+
+    option.disabled = activeIds.has(option.value);
+  });
+}
+
+function updateAudioControlsAvailability() {
+  if (!audioSelect || !audioAddButton) {
+    return;
+  }
+
+  const hasTracks = audioTracks.length > 0;
+  audioSelect.disabled = !hasTracks;
+
+  const selectedId = audioSelect.value;
+  const selectedOption =
+    audioSelect.options && audioSelect.selectedIndex >= 0
+      ? audioSelect.options[audioSelect.selectedIndex]
+      : null;
+  const isActive = (currentAudioMix.tracks || []).some((track) => track.id === selectedId);
+  const isAvailable =
+    Boolean(selectedId) &&
+    Boolean(audioTracksById[selectedId]) &&
+    !isActive &&
+    !selectedOption?.disabled;
+  audioAddButton.disabled = !hasTracks || !isAvailable;
+}
+
+function renderAudioMix() {
+  if (!audioActiveList || !audioEmptyState) {
+    return;
+  }
+
+  audioActiveList.innerHTML = '';
+
+  const tracks = Array.isArray(currentAudioMix.tracks) ? currentAudioMix.tracks : [];
+  const visibleTracks = tracks.filter((track) => audioTracksById[track.id]);
+
+  if (!visibleTracks.length) {
+    audioEmptyState.hidden = false;
+    audioActiveList.setAttribute('aria-hidden', 'true');
+    updateAudioSelectOptions();
+    updateAudioControlsAvailability();
+    return;
+  }
+
+  audioEmptyState.hidden = true;
+  audioActiveList.removeAttribute('aria-hidden');
+
+  visibleTracks.forEach((mixTrack) => {
+    const asset = audioTracksById[mixTrack.id];
+    const item = document.createElement('li');
+    item.className = 'audio-mixer__item';
+
+    const header = document.createElement('div');
+    header.className = 'audio-mixer__item-header';
+
+    const name = document.createElement('span');
+    name.className = 'audio-mixer__name';
+    name.textContent = asset?.name || 'Piste audio';
+    header.appendChild(name);
+
+    const stopButton = document.createElement('button');
+    stopButton.type = 'button';
+    stopButton.className = 'audio-mixer__stop';
+    stopButton.textContent = 'Arrêter';
+    stopButton.addEventListener('click', () => {
+      updateAudioMixState((tracks) => tracks.filter((track) => track.id !== mixTrack.id));
+    });
+    header.appendChild(stopButton);
+
+    item.appendChild(header);
+
+    const controlsRow = document.createElement('div');
+    controlsRow.className = 'audio-mixer__row';
+
+    const volumeLabel = document.createElement('label');
+    volumeLabel.className = 'audio-mixer__volume';
+    volumeLabel.textContent = 'Volume';
+
+    const volumeValue = document.createElement('span');
+    volumeValue.className = 'audio-mixer__value';
+    const initialVolume = Math.round((mixTrack.volume ?? 1) * 100);
+    volumeValue.textContent = `${initialVolume}%`;
+
+    const volumeInput = document.createElement('input');
+    volumeInput.type = 'range';
+    volumeInput.min = '0';
+    volumeInput.max = '100';
+    volumeInput.step = '1';
+    volumeInput.value = String(initialVolume);
+    volumeInput.setAttribute('aria-label', `Volume de ${asset?.name || 'la piste audio'}`);
+
+    volumeInput.addEventListener('input', () => {
+      volumeValue.textContent = `${volumeInput.value}%`;
+    });
+
+    const commitVolumeChange = () => {
+      const sliderValue = Number(volumeInput.value);
+      const ratio = Number.isFinite(sliderValue)
+        ? Math.max(0, Math.min(100, sliderValue)) / 100
+        : 1;
+
+      updateAudioMixState((tracks) =>
+        tracks.map((track) =>
+          track.id === mixTrack.id
+            ? {
+                ...track,
+                volume: ratio
+              }
+            : track
+        )
+      );
+    };
+
+    volumeInput.addEventListener('change', commitVolumeChange);
+    volumeInput.addEventListener('pointerup', commitVolumeChange);
+    volumeInput.addEventListener('mouseup', commitVolumeChange);
+    volumeInput.addEventListener('touchend', commitVolumeChange);
+
+    volumeLabel.append(volumeInput, volumeValue);
+    controlsRow.appendChild(volumeLabel);
+
+    const loopLabel = document.createElement('label');
+    loopLabel.className = 'audio-mixer__loop';
+
+    const loopInput = document.createElement('input');
+    loopInput.type = 'checkbox';
+    loopInput.checked = Boolean(mixTrack.loop);
+    loopInput.setAttribute(
+      'aria-label',
+      `Lecture en boucle pour ${asset?.name || 'la piste audio'}`
+    );
+    loopInput.addEventListener('change', () => {
+      updateAudioMixState((tracks) =>
+        tracks.map((track) =>
+          track.id === mixTrack.id
+            ? {
+                ...track,
+                loop: loopInput.checked
+              }
+            : track
+        )
+      );
+    });
+
+    const loopText = document.createElement('span');
+    loopText.textContent = 'Lecture en boucle';
+
+    loopLabel.append(loopInput, loopText);
+    controlsRow.appendChild(loopLabel);
+
+    item.appendChild(controlsRow);
+
+    audioActiveList.appendChild(item);
+  });
+
+  updateAudioSelectOptions();
+  updateAudioControlsAvailability();
+}
+
+function applyAudioMixLocally(mix) {
+  const normalised = sanitiseAudioMix(mix);
+  const changed = !areAudioMixesEqual(currentAudioMix, normalised);
+  currentAudioMix = normalised;
+  renderAudioMix();
+  return changed;
+}
+
+function updateAudioMixState(updater) {
+  const currentTracks = Array.isArray(currentAudioMix.tracks)
+    ? currentAudioMix.tracks
+    : [];
+  const nextTracks = updater(currentTracks);
+  const didChange = applyAudioMixLocally({ tracks: nextTracks });
+
+  if (didChange && socket) {
+    socket.emit('audio:set', currentAudioMix);
+  }
+}
+
+function handleAudioUpdate(mix) {
+  applyAudioMixLocally(mix);
+}
+
 const createOrientationSelect = (prefix, index, sideLabel) => {
   const select = document.createElement('select');
   select.id = `${prefix}-${index}-orientation`;
@@ -555,16 +840,23 @@ const handleLibraryUpdate = (nextLibrary) => {
   const nextCharacters = Array.isArray(nextLibrary.characters)
     ? nextLibrary.characters
     : characters;
+  const nextAudioTracks = Array.isArray(nextLibrary.audioTracks)
+    ? nextLibrary.audioTracks
+    : audioTracks;
 
   backgrounds = nextBackgrounds;
   characters = nextCharacters;
+  audioTracks = nextAudioTracks;
 
   backgroundsById = Object.fromEntries(backgrounds.map((item) => [item.id, item]));
   charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
+  audioTracksById = Object.fromEntries(audioTracks.map((item) => [item.id, item]));
 
   const preservedScene = getSceneFromForm();
 
   populateSelect(backgroundSelect, backgrounds);
+  populateAudioSelect(audioSelect, audioTracks);
+  applyAudioMixLocally(currentAudioMix);
 
   leftSelectElements.forEach((slot, index) => {
     const previousValue = preservedScene.left[index] ?? null;
@@ -589,20 +881,25 @@ const handleLibraryUpdate = (nextLibrary) => {
 };
 
 const initialise = async () => {
-  const libraryResponse = await fetch('/api/library');
-  const sceneResponse = await fetch('/api/scene');
+  const [libraryResponse, sceneResponse, audioResponse] = await Promise.all([
+    fetch('/api/library'),
+    fetch('/api/scene'),
+    fetch('/api/audio')
+  ]);
 
-  if (!libraryResponse.ok || !sceneResponse.ok) {
+  if (!libraryResponse.ok || !sceneResponse.ok || !audioResponse.ok) {
     statusElement.textContent = 'Impossible de charger les données.';
     return;
   }
 
   const library = await libraryResponse.json();
   const sceneData = await sceneResponse.json();
+  const audioData = await audioResponse.json();
 
   backgrounds = library.backgrounds ?? [];
   characters = library.characters ?? [];
   layouts = library.layouts ?? [];
+  audioTracks = library.audioTracks ?? [];
 
   if (!layouts.length) {
     layouts = [{ id: '2v3', label: '2 vs 3', left: 2, right: 3 }];
@@ -611,18 +908,60 @@ const initialise = async () => {
   backgroundsById = Object.fromEntries(backgrounds.map((item) => [item.id, item]));
   charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
   layoutsById = Object.fromEntries(layouts.map((item) => [item.id, item]));
+  audioTracksById = Object.fromEntries(audioTracks.map((item) => [item.id, item]));
 
   populateSelect(layoutSelect, layouts);
   populateSelect(backgroundSelect, backgrounds);
+  populateAudioSelect(audioSelect, audioTracks);
+  applyAudioMixLocally(audioData.mix);
 
   attachFormListeners();
+  updateAudioControlsAvailability();
 
   socket = io();
   socket.on('scene:update', handleSceneUpdate);
   socket.on('library:update', handleLibraryUpdate);
+  socket.on('audio:update', handleAudioUpdate);
 
   handleSceneUpdate(sceneData.scene);
 };
+
+if (audioSelect) {
+  audioSelect.addEventListener('change', () => {
+    updateAudioControlsAvailability();
+  });
+}
+
+if (audioAddButton) {
+  audioAddButton.addEventListener('click', () => {
+    if (!audioSelect) {
+      return;
+    }
+
+    const selectedId = audioSelect.value;
+
+    if (!selectedId || !audioTracksById[selectedId]) {
+      updateAudioControlsAvailability();
+      return;
+    }
+
+    updateAudioMixState((tracks) => {
+      if (tracks.some((track) => track.id === selectedId)) {
+        return tracks;
+      }
+
+      return [...tracks, { id: selectedId, volume: 1, loop: false }];
+    });
+
+    if (audioSelect.options.length > 0) {
+      audioSelect.selectedIndex = 0;
+    } else {
+      audioSelect.value = '';
+    }
+
+    updateAudioControlsAvailability();
+  });
+}
 
 initialise();
 

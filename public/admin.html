@@ -66,6 +66,32 @@
             </div>
           </div>
         </section>
+
+        <section class="audio-mixer" aria-labelledby="audio-mixer-title">
+          <div class="audio-mixer__header">
+            <h2 id="audio-mixer-title">Diffusion audio</h2>
+            <p class="audio-mixer__description">
+              Diffusez plusieurs pistes en simultané, ajustez leur volume et choisissez si elles se
+              bouclent.
+            </p>
+          </div>
+
+          <div class="audio-mixer__controls">
+            <label class="field audio-mixer__field">
+              <span class="field__label">Ajouter une piste audio</span>
+              <div class="audio-mixer__input-row">
+                <select id="audio-track" name="audio-track"></select>
+                <button type="button" class="audio-mixer__add">Ajouter</button>
+              </div>
+            </label>
+          </div>
+
+          <p class="audio-mixer__empty" id="audio-empty">
+            Aucune piste n'est diffusée pour le moment.
+          </p>
+
+          <ul class="audio-mixer__list" id="audio-active-list" aria-live="polite"></ul>
+        </section>
       </section>
     </main>
 
