@@ -35,26 +35,7 @@ ensureDirectory(TRACK_UPLOADS_DIR);
 ensureDirectory(TRACK_AUDIO_UPLOADS_DIR);
 ensureDirectory(TRACK_VIDEO_UPLOADS_DIR);
 
-const defaultBackgrounds = [
-  {
-    id: 'forest-day',
-    name: 'Forêt ensoleillée',
-    background: 'linear-gradient(135deg, #7bc043, #2c5f2d)',
-    origin: 'default'
-  },
-  {
-    id: 'arcane-lab',
-    name: 'Laboratoire arcanique',
-    background: 'radial-gradient(circle at top, #7f7fd5, #86a8e7, #91eae4)',
-    origin: 'default'
-  },
-  {
-    id: 'city-night',
-    name: 'Ville nocturne',
-    background: 'linear-gradient(160deg, #20002c, #4a0072 45%, #120136)',
-    origin: 'default'
-  }
-];
+const defaultBackgrounds = [];
 
 const sceneLayouts = [
   { id: '1v0', label: '1 vs 0', left: 1, right: 0 },
@@ -70,14 +51,7 @@ const sceneLayouts = [
   { id: '3v3', label: '3 vs 3', left: 3, right: 3 }
 ];
 
-const defaultCharacters = [
-  { id: 'warrior', name: 'Guerrier', color: '#d35400', origin: 'default' },
-  { id: 'mage', name: 'Mage', color: '#9b59b6', origin: 'default' },
-  { id: 'archer', name: 'Archer', color: '#27ae60', origin: 'default' },
-  { id: 'rogue', name: 'Voleuse', color: '#2c3e50', origin: 'default' },
-  { id: 'cleric', name: 'Clerc', color: '#f1c40f', origin: 'default' },
-  { id: 'bard', name: 'Barde', color: '#e74c3c', origin: 'default' }
-];
+const defaultCharacters = [];
 
 const safeReadJson = (filePath) => {
   try {
