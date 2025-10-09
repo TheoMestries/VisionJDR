@@ -215,6 +215,7 @@ const createAssetCard = (asset, type) => {
         video.preload = 'metadata';
         video.muted = true;
         video.playsInline = true;
+        video.classList.add('asset-card__video');
         preview.appendChild(video);
       } else {
         const audio = document.createElement('audio');
@@ -230,18 +231,7 @@ const createAssetCard = (asset, type) => {
       preview.appendChild(icon);
     }
 
-    if (trackStorageLabel) {
-      const badge = document.createElement('span');
-      badge.className = 'asset-card__badge';
-      badge.textContent = trackStorageLabel;
-
-      if (trackStorage) {
-        badge.classList.add(`asset-card__badge--${trackStorage}`);
-        badge.dataset.storage = trackStorage;
-      }
-
-      preview.appendChild(badge);
-    }
+    // No additional badge for tracks – the preview and title are sufficient.
   } else if (type === 'background') {
     preview.style.background = asset.background || '#1e293b';
   } else {
@@ -257,32 +247,20 @@ const createAssetCard = (asset, type) => {
 
   item.appendChild(figure);
 
-  const origin = document.createElement('p');
-  origin.className = 'asset-card__meta';
-  origin.textContent = asset.origin === 'upload' ? 'Importé' : 'Préconfiguré';
-  item.appendChild(origin);
+  if (!isTrackType(type)) {
+    const origin = document.createElement('p');
+    origin.className = 'asset-card__meta';
+    origin.textContent = asset.origin === 'upload' ? 'Importé' : 'Préconfiguré';
+    item.appendChild(origin);
 
-  if (isTrackType(type) && trackStorageLabel) {
-    const storageElement = document.createElement('p');
-    storageElement.className = 'asset-card__meta';
-    storageElement.textContent = `Stockage : ${trackStorageLabel}`;
-    item.appendChild(storageElement);
-  }
+    const formattedDate = formatDateTime(asset.createdAt);
 
-  if (isTrackType(type) && asset.mimeType) {
-    const mimeElement = document.createElement('p');
-    mimeElement.className = 'asset-card__meta asset-card__meta--muted';
-    mimeElement.textContent = `Format : ${asset.mimeType}`;
-    item.appendChild(mimeElement);
-  }
-
-  const formattedDate = formatDateTime(asset.createdAt);
-
-  if (formattedDate && asset.origin === 'upload') {
-    const dateElement = document.createElement('p');
-    dateElement.className = 'asset-card__meta asset-card__meta--muted';
-    dateElement.textContent = `Ajouté le ${formattedDate}`;
-    item.appendChild(dateElement);
+    if (formattedDate && asset.origin === 'upload') {
+      const dateElement = document.createElement('p');
+      dateElement.className = 'asset-card__meta asset-card__meta--muted';
+      dateElement.textContent = `Ajouté le ${formattedDate}`;
+      item.appendChild(dateElement);
+    }
   }
 
   if (asset.origin === 'upload') {
