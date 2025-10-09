@@ -1,22 +1,28 @@
 const characterForm = document.getElementById('character-upload-form');
 const backgroundForm = document.getElementById('background-upload-form');
+const trackForm = document.getElementById('track-upload-form');
 const characterStatus = document.getElementById('character-upload-status');
 const backgroundStatus = document.getElementById('background-upload-status');
+const trackStatus = document.getElementById('track-upload-status');
 const characterList = document.getElementById('character-assets');
 const backgroundList = document.getElementById('background-assets');
+const trackList = document.getElementById('track-assets');
 const characterCount = document.getElementById('character-count');
 const backgroundCount = document.getElementById('background-count');
+const trackCount = document.getElementById('track-count');
 
-let library = { backgrounds: [], characters: [] };
+let library = { backgrounds: [], characters: [], tracks: [] };
 
 const statusByType = {
   character: characterStatus,
-  background: backgroundStatus
+  background: backgroundStatus,
+  track: trackStatus
 };
 
 const endpointByType = {
   character: '/api/assets/characters/',
-  background: '/api/assets/backgrounds/'
+  background: '/api/assets/backgrounds/',
+  track: '/api/assets/tracks/'
 };
 
 const setStatus = (element, message, state = null) => {
@@ -90,6 +96,23 @@ const createAssetCard = (asset, type) => {
     image.src = asset.image;
     image.alt = asset.name || (type === 'character' ? 'Personnage' : 'Décor');
     preview.appendChild(image);
+  } else if (type === 'track') {
+    preview.classList.add('asset-card__preview--track');
+
+    if (asset.file) {
+      const video = document.createElement('video');
+      video.src = asset.file;
+      video.controls = true;
+      video.preload = 'metadata';
+      video.muted = true;
+      video.playsInline = true;
+      preview.appendChild(video);
+    } else {
+      const icon = document.createElement('span');
+      icon.className = 'asset-card__icon';
+      icon.textContent = '🎵';
+      preview.appendChild(icon);
+    }
   } else if (type === 'background') {
     preview.style.background = asset.background || '#1e293b';
   } else {
@@ -109,6 +132,13 @@ const createAssetCard = (asset, type) => {
   origin.className = 'asset-card__meta';
   origin.textContent = asset.origin === 'upload' ? 'Importé' : 'Préconfiguré';
   item.appendChild(origin);
+
+  if (type === 'track' && asset.mimeType) {
+    const mimeElement = document.createElement('p');
+    mimeElement.className = 'asset-card__meta asset-card__meta--muted';
+    mimeElement.textContent = `Format : ${asset.mimeType}`;
+    item.appendChild(mimeElement);
+  }
 
   const formattedDate = formatDateTime(asset.createdAt);
 
@@ -162,10 +192,13 @@ const renderAssetList = (listElement, assets, type, countElement) => {
   if (!sortedAssets.length) {
     const emptyMessage = document.createElement('li');
     emptyMessage.className = 'asset-card asset-card--empty';
-    emptyMessage.textContent =
-      type === 'character'
-        ? 'Aucun personnage enregistré pour le moment.'
-        : 'Aucun décor enregistré pour le moment.';
+    if (type === 'character') {
+      emptyMessage.textContent = 'Aucun personnage enregistré pour le moment.';
+    } else if (type === 'background') {
+      emptyMessage.textContent = 'Aucun décor enregistré pour le moment.';
+    } else {
+      emptyMessage.textContent = 'Aucune piste enregistrée pour le moment.';
+    }
     listElement.appendChild(emptyMessage);
   } else {
     sortedAssets.forEach((asset) => {
@@ -189,6 +222,7 @@ const refreshLibrary = async () => {
 
   renderAssetList(characterList, library.characters ?? [], 'character', characterCount);
   renderAssetList(backgroundList, library.backgrounds ?? [], 'background', backgroundCount);
+  renderAssetList(trackList, library.tracks ?? [], 'track', trackCount);
 };
 
 const deleteAsset = async (type, assetId, buttonElement) => {
@@ -249,10 +283,15 @@ const handleAssetListClick = (event) => {
     return;
   }
 
-  const confirmationMessage =
-    assetType === 'background'
-      ? 'Supprimer ce décor de la médiathèque ?'
-      : 'Supprimer ce personnage de la médiathèque ?';
+  let confirmationMessage = 'Supprimer ce média de la médiathèque ?';
+
+  if (assetType === 'background') {
+    confirmationMessage = 'Supprimer ce décor de la médiathèque ?';
+  } else if (assetType === 'character') {
+    confirmationMessage = 'Supprimer ce personnage de la médiathèque ?';
+  } else if (assetType === 'track') {
+    confirmationMessage = 'Supprimer cette piste de la médiathèque ?';
+  }
 
   if (!window.confirm(confirmationMessage)) {
     return;
@@ -263,7 +302,7 @@ const handleAssetListClick = (event) => {
   });
 };
 
-const handleUpload = (formElement, endpoint, statusElement) => {
+const handleUpload = (formElement, endpoint, statusElement, successMessage = 'Média enregistré avec succès !') => {
   if (!formElement) {
     return;
   }
@@ -293,7 +332,7 @@ const handleUpload = (formElement, endpoint, statusElement) => {
         return;
       }
 
-      setStatus(statusElement, 'Image enregistrée avec succès !', 'success');
+      setStatus(statusElement, successMessage, 'success');
       clearStatusLater(statusElement);
       formElement.reset();
       await refreshLibrary();
@@ -308,8 +347,9 @@ const handleUpload = (formElement, endpoint, statusElement) => {
   });
 };
 
-handleUpload(characterForm, '/api/assets/characters', characterStatus);
-handleUpload(backgroundForm, '/api/assets/backgrounds', backgroundStatus);
+handleUpload(characterForm, '/api/assets/characters', characterStatus, 'Personnage enregistré avec succès !');
+handleUpload(backgroundForm, '/api/assets/backgrounds', backgroundStatus, 'Décor enregistré avec succès !');
+handleUpload(trackForm, '/api/assets/tracks', trackStatus, 'Piste enregistrée avec succès !');
 
 if (characterList) {
   characterList.addEventListener('click', handleAssetListClick);
@@ -319,7 +359,12 @@ if (backgroundList) {
   backgroundList.addEventListener('click', handleAssetListClick);
 }
 
+if (trackList) {
+  trackList.addEventListener('click', handleAssetListClick);
+}
+
 refreshLibrary().catch(() => {
   setStatus(characterStatus, 'Impossible de charger la médiathèque.', 'error');
   setStatus(backgroundStatus, 'Impossible de charger la médiathèque.', 'error');
+  setStatus(trackStatus, 'Impossible de charger la médiathèque.', 'error');
 });
