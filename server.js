@@ -17,6 +17,8 @@ const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
 const CHARACTER_UPLOADS_DIR = path.join(UPLOADS_DIR, 'characters');
 const BACKGROUND_UPLOADS_DIR = path.join(UPLOADS_DIR, 'backgrounds');
 const TRACK_UPLOADS_DIR = path.join(UPLOADS_DIR, 'tracks');
+const TRACK_AUDIO_UPLOADS_DIR = path.join(TRACK_UPLOADS_DIR, 'audio');
+const TRACK_VIDEO_UPLOADS_DIR = path.join(TRACK_UPLOADS_DIR, 'video');
 const LIBRARY_FILE = path.join(DATA_DIR, 'library.json');
 
 const ensureDirectory = (directory) => {
@@ -30,6 +32,8 @@ ensureDirectory(UPLOADS_DIR);
 ensureDirectory(CHARACTER_UPLOADS_DIR);
 ensureDirectory(BACKGROUND_UPLOADS_DIR);
 ensureDirectory(TRACK_UPLOADS_DIR);
+ensureDirectory(TRACK_AUDIO_UPLOADS_DIR);
+ensureDirectory(TRACK_VIDEO_UPLOADS_DIR);
 
 const defaultBackgrounds = [
   {
@@ -96,6 +100,43 @@ const slugify = (value) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '') || 'element';
 
+const detectTrackStorage = (track) => {
+  if (!track || typeof track !== 'object') {
+    return null;
+  }
+
+  const storage = (track.storage || '').toString().toLowerCase();
+
+  if (storage === 'audio' || storage === 'video') {
+    return storage;
+  }
+
+  const filePath = (track.file || '').toString().toLowerCase();
+
+  if (filePath.includes('/uploads/tracks/video/')) {
+    return 'video';
+  }
+
+  if (filePath.includes('/uploads/tracks/audio/')) {
+    return 'audio';
+  }
+
+  return null;
+};
+
+const normaliseTrack = (track) => {
+  if (!track || typeof track !== 'object') {
+    return null;
+  }
+
+  const storage = detectTrackStorage(track);
+
+  return {
+    ...track,
+    storage: storage ?? null
+  };
+};
+
 const loadCustomLibrary = () => {
   const stored = safeReadJson(LIBRARY_FILE);
 
@@ -106,7 +147,11 @@ const loadCustomLibrary = () => {
   return {
     backgrounds: Array.isArray(stored.backgrounds) ? stored.backgrounds : [],
     characters: Array.isArray(stored.characters) ? stored.characters : [],
-    tracks: Array.isArray(stored.tracks) ? stored.tracks : []
+    tracks: Array.isArray(stored.tracks)
+      ? stored.tracks
+          .map(normaliseTrack)
+          .filter((track) => track !== null)
+      : []
   };
 };
 
@@ -122,7 +167,8 @@ let library = { backgrounds: [], characters: [], tracks: [], layouts: [] };
 const refreshLibrary = () => {
   backgrounds = [...defaultBackgrounds, ...(customLibrary.backgrounds ?? [])];
   characters = [...defaultCharacters, ...(customLibrary.characters ?? [])];
-  tracks = [...(customLibrary.tracks ?? [])];
+  tracks = [...(customLibrary.tracks ?? [])].map(normaliseTrack).filter(Boolean);
+  customLibrary.tracks = [...tracks];
 
   backgroundsById = Object.fromEntries(backgrounds.map((item) => [item.id, item]));
   charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
@@ -203,9 +249,12 @@ const imageFileFilter = (req, file, callback) => {
 
 const uploadLimits = { fileSize: 8 * 1024 * 1024 };
 
+const isAudioMimeType = (mimeType) => mimeType?.startsWith('audio/');
+const isVideoMimeType = (mimeType) => ['video/mp4', 'video/mpeg', 'video/quicktime'].includes(mimeType);
+
 const trackFileFilter = (req, file, callback) => {
-  const isAudio = file.mimetype.startsWith('audio/');
-  const isVideo = ['video/mp4', 'video/mpeg', 'video/quicktime'].includes(file.mimetype);
+  const isAudio = isAudioMimeType(file.mimetype);
+  const isVideo = isVideoMimeType(file.mimetype);
 
   if (!isAudio && !isVideo) {
     callback(new Error('Seuls les fichiers audio ou vidéo MP4 sont autorisés.'));
@@ -241,7 +290,13 @@ const backgroundUpload = multer({
 
 const trackUpload = multer({
   storage: multer.diskStorage({
-    destination: TRACK_UPLOADS_DIR,
+    destination: (req, file, callback) => {
+      const destination = isVideoMimeType(file.mimetype)
+        ? TRACK_VIDEO_UPLOADS_DIR
+        : TRACK_AUDIO_UPLOADS_DIR;
+
+      callback(null, destination);
+    },
     filename: (req, file, callback) => {
       callback(null, createFileName(file.originalname));
     }
@@ -468,12 +523,15 @@ app.post(
 
     const displayName = nameInput || uploadedFile.originalname;
     const trackId = createAssetId('track', displayName);
-    const publicPath = `/uploads/tracks/${uploadedFile.filename}`;
+    const isVideo = isVideoMimeType(uploadedFile.mimetype);
+    const subDirectory = isVideo ? 'video' : 'audio';
+    const publicPath = `/uploads/tracks/${subDirectory}/${uploadedFile.filename}`;
     const track = {
       id: trackId,
       name: displayName,
       file: publicPath,
       mimeType: uploadedFile.mimetype,
+      storage: subDirectory,
       origin: 'upload',
       createdAt: new Date().toISOString()
     };

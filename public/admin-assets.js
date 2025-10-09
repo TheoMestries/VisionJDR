@@ -19,6 +19,83 @@ const statusByType = {
   track: trackStatus
 };
 
+const getTrackStorage = (asset = {}) => {
+  const storage = (asset.storage || '').toString().toLowerCase();
+
+  if (storage === 'audio' || storage === 'video') {
+    return storage;
+  }
+
+  const filePath = (asset.file || '').toString().toLowerCase();
+
+  if (filePath.includes('/uploads/tracks/video/')) {
+    return 'video';
+  }
+
+  if (filePath.includes('/uploads/tracks/audio/')) {
+    return 'audio';
+  }
+
+  return null;
+};
+
+const getTrackMediaKind = (asset = {}) => {
+  const mimeType = asset.mimeType || '';
+
+  if (mimeType.startsWith('audio/')) {
+    return 'audio';
+  }
+
+  if (mimeType.startsWith('video/')) {
+    return 'video';
+  }
+
+  const filePath = asset.file || '';
+  const extension = filePath.split('?')[0].split('.').pop();
+
+  if (!extension) {
+    return null;
+  }
+
+  const normalizedExtension = extension.toLowerCase();
+
+  if (['mp4', 'mpeg', 'mpg', 'mov', 'qt'].includes(normalizedExtension)) {
+    return 'video';
+  }
+
+  if (
+    [
+      'mp3',
+      'wav',
+      'ogg',
+      'oga',
+      'aac',
+      'flac',
+      'm4a',
+      'opus',
+      'weba'
+    ].includes(normalizedExtension)
+  ) {
+    return 'audio';
+  }
+
+  return null;
+};
+
+const getTrackStorageLabel = (asset = {}) => {
+  const storage = getTrackStorage(asset);
+
+  if (storage === 'audio') {
+    return 'Audio';
+  }
+
+  if (storage === 'video') {
+    return 'Vidéo';
+  }
+
+  return null;
+};
+
 const endpointByType = {
   character: '/api/assets/characters/',
   background: '/api/assets/backgrounds/',
@@ -91,6 +168,10 @@ const createAssetCard = (asset, type) => {
   const preview = document.createElement('div');
   preview.className = 'asset-card__preview';
 
+  const trackStorage = type === 'track' ? getTrackStorage(asset) : null;
+  const trackStorageLabel = type === 'track' ? getTrackStorageLabel(asset) : null;
+  const trackMediaKind = type === 'track' ? getTrackMediaKind(asset) : null;
+
   if (asset.image) {
     const image = document.createElement('img');
     image.src = asset.image;
@@ -100,18 +181,41 @@ const createAssetCard = (asset, type) => {
     preview.classList.add('asset-card__preview--track');
 
     if (asset.file) {
-      const video = document.createElement('video');
-      video.src = asset.file;
-      video.controls = true;
-      video.preload = 'metadata';
-      video.muted = true;
-      video.playsInline = true;
-      preview.appendChild(video);
+      const mediaKind = trackMediaKind || trackStorage;
+
+      if (mediaKind === 'video') {
+        const video = document.createElement('video');
+        video.src = asset.file;
+        video.controls = true;
+        video.preload = 'metadata';
+        video.muted = true;
+        video.playsInline = true;
+        preview.appendChild(video);
+      } else {
+        const audio = document.createElement('audio');
+        audio.src = asset.file;
+        audio.controls = true;
+        audio.preload = 'metadata';
+        preview.appendChild(audio);
+      }
     } else {
       const icon = document.createElement('span');
       icon.className = 'asset-card__icon';
       icon.textContent = '🎵';
       preview.appendChild(icon);
+    }
+
+    if (trackStorageLabel) {
+      const badge = document.createElement('span');
+      badge.className = 'asset-card__badge';
+      badge.textContent = trackStorageLabel;
+
+      if (trackStorage) {
+        badge.classList.add(`asset-card__badge--${trackStorage}`);
+        badge.dataset.storage = trackStorage;
+      }
+
+      preview.appendChild(badge);
     }
   } else if (type === 'background') {
     preview.style.background = asset.background || '#1e293b';
@@ -132,6 +236,13 @@ const createAssetCard = (asset, type) => {
   origin.className = 'asset-card__meta';
   origin.textContent = asset.origin === 'upload' ? 'Importé' : 'Préconfiguré';
   item.appendChild(origin);
+
+  if (type === 'track' && trackStorageLabel) {
+    const storageElement = document.createElement('p');
+    storageElement.className = 'asset-card__meta';
+    storageElement.textContent = `Stockage : ${trackStorageLabel}`;
+    item.appendChild(storageElement);
+  }
 
   if (type === 'track' && asset.mimeType) {
     const mimeElement = document.createElement('p');
