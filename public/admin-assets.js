@@ -418,6 +418,7 @@ const createAssetCard = (asset, type) => {
     preview.classList.add('asset-card__preview--track');
     const mediaKind = trackKind;
 
+
     if (mediaKind === 'video') {
       item.classList.add('asset-card--video');
       preview.classList.add('asset-card__preview--video');
@@ -474,6 +475,7 @@ const createAssetCard = (asset, type) => {
 
   item.appendChild(figure);
 
+
   if (!isTrackType(type)) {
     const origin = document.createElement('p');
     origin.className = 'asset-card__meta';
@@ -481,6 +483,7 @@ const createAssetCard = (asset, type) => {
     item.appendChild(origin);
 
     const formattedDate = formatDateTime(asset.createdAt);
+
 
     if (formattedDate && asset.origin === 'upload') {
       const dateElement = document.createElement('p');

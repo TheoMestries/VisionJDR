@@ -583,6 +583,7 @@ select:focus {
   width: 100%;
 }
 
+
 .asset-card--audio {
   position: relative;
   padding: 1.25rem 1.35rem;
@@ -818,6 +819,7 @@ select:focus {
 .audio-track__separator {
   opacity: 0.6;
 }
+
 
 .asset-card__badge {
   position: absolute;
