@@ -23,6 +23,167 @@ const statusByType = {
 
 const audioPlayers = [];
 
+const videoModalState = {
+  element: null,
+  titleElement: null,
+  videoElement: null,
+  lastTrigger: null
+};
+
+function closeVideoModal() {
+  const { element, videoElement, lastTrigger } = videoModalState;
+
+  if (!element || element.dataset.state !== 'open') {
+    return;
+  }
+
+  if (videoElement) {
+    videoElement.pause();
+    videoElement.removeAttribute('src');
+    videoElement.load();
+  }
+
+  element.dataset.state = 'closed';
+  element.setAttribute('hidden', '');
+  element.setAttribute('aria-hidden', 'true');
+
+  document.body.classList.remove('is-modal-open');
+  document.removeEventListener('keydown', handleVideoModalKeydown);
+
+  if (lastTrigger && typeof lastTrigger.focus === 'function') {
+    window.requestAnimationFrame(() => {
+      lastTrigger.focus();
+    });
+  }
+
+  videoModalState.lastTrigger = null;
+
+  if (videoElement && typeof videoElement.blur === 'function') {
+    videoElement.blur();
+  }
+}
+
+function handleVideoModalKeydown(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeVideoModal();
+  }
+}
+
+const ensureVideoModal = () => {
+  if (videoModalState.element) {
+    return videoModalState.element;
+  }
+
+  const modal = document.createElement('div');
+  modal.className = 'video-modal';
+  modal.dataset.state = 'closed';
+  modal.setAttribute('hidden', '');
+  modal.setAttribute('aria-hidden', 'true');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'video-modal__overlay';
+  overlay.dataset.action = 'close-video-modal';
+  modal.appendChild(overlay);
+
+  const dialog = document.createElement('div');
+  dialog.className = 'video-modal__dialog';
+  dialog.setAttribute('role', 'dialog');
+  dialog.setAttribute('aria-modal', 'true');
+  modal.appendChild(dialog);
+
+  const header = document.createElement('header');
+  header.className = 'video-modal__header';
+  dialog.appendChild(header);
+
+  const title = document.createElement('h2');
+  title.className = 'video-modal__title';
+  title.id = 'video-modal-title';
+  title.textContent = 'Lecture vidéo';
+  header.appendChild(title);
+
+  dialog.setAttribute('aria-labelledby', title.id);
+
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'video-modal__close';
+  closeButton.dataset.action = 'close-video-modal';
+  closeButton.setAttribute('aria-label', 'Fermer la vidéo');
+  closeButton.innerHTML = '<span aria-hidden="true">×</span>';
+  header.appendChild(closeButton);
+
+  const body = document.createElement('div');
+  body.className = 'video-modal__body';
+  dialog.appendChild(body);
+
+  const video = document.createElement('video');
+  video.className = 'video-modal__player';
+  video.controls = true;
+  video.playsInline = true;
+  video.preload = 'metadata';
+  video.setAttribute('tabindex', '-1');
+  body.appendChild(video);
+
+  modal.addEventListener('click', (event) => {
+    const trigger = event.target.closest('[data-action="close-video-modal"]');
+
+    if (!trigger) {
+      return;
+    }
+
+    event.preventDefault();
+    closeVideoModal();
+  });
+
+  document.body.appendChild(modal);
+
+  videoModalState.element = modal;
+  videoModalState.videoElement = video;
+  videoModalState.titleElement = title;
+
+  return modal;
+};
+
+const openVideoModal = (asset = {}, triggerElement = null) => {
+  if (!asset || !asset.file) {
+    return;
+  }
+
+  const modal = ensureVideoModal();
+  const { videoElement, titleElement } = videoModalState;
+
+  const assetName = asset.name && asset.name.trim() ? asset.name.trim() : 'Vidéo';
+
+  if (titleElement) {
+    titleElement.textContent = assetName;
+  }
+
+  if (videoElement) {
+    videoElement.pause();
+    videoElement.src = asset.file;
+    videoElement.load();
+  }
+
+  modal.dataset.state = 'open';
+  modal.removeAttribute('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+
+  document.body.classList.add('is-modal-open');
+  document.addEventListener('keydown', handleVideoModalKeydown);
+
+  videoModalState.lastTrigger = triggerElement || null;
+
+  if (videoElement) {
+    window.requestAnimationFrame(() => {
+      try {
+        videoElement.focus({ preventScroll: true });
+      } catch (error) {
+        // Ignore focus errors.
+      }
+    });
+  }
+};
+
 const resetAudioPlayers = () => {
   audioPlayers.forEach((player) => {
     if (player?.audio && !player.audio.paused) {
@@ -391,6 +552,59 @@ const createAssetCard = (asset, type) => {
   item.className = 'asset-card';
   item.dataset.assetCategory = type;
 
+  const normalizedType = normaliseTrackType(type);
+  const trackStorage = isTrackType(type) ? getTrackStorage(asset) : null;
+  const trackMediaKind = isTrackType(type) ? getTrackMediaKind(asset) : null;
+  const trackKind = trackMediaKind || trackStorage;
+
+  if (type === 'track-video') {
+    item.classList.add('asset-card--track', 'asset-card--video', 'asset-card--video-list');
+
+    if (asset.origin === 'upload') {
+      item.classList.add('asset-card--custom');
+    } else {
+      item.classList.add('asset-card--default');
+    }
+
+    const videoButton = document.createElement('button');
+    videoButton.type = 'button';
+    videoButton.className = 'asset-card__video-link';
+
+    const assetName = asset.name && asset.name.trim() ? asset.name.trim() : 'Sans titre';
+    videoButton.textContent = assetName;
+
+    if (asset.file) {
+      videoButton.setAttribute('aria-label', `Lire la vidéo « ${assetName} »`);
+      videoButton.addEventListener('click', () => {
+        openVideoModal(asset, videoButton);
+      });
+    } else {
+      videoButton.disabled = true;
+      videoButton.setAttribute('aria-disabled', 'true');
+    }
+
+    item.appendChild(videoButton);
+
+    if (asset.origin === 'upload') {
+      const actions = document.createElement('div');
+      actions.className = 'asset-card__actions asset-card__actions--video';
+
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'asset-card__button';
+      deleteButton.textContent = 'Supprimer';
+      deleteButton.dataset.assetId = asset.id;
+      deleteButton.dataset.assetType = normalizedType;
+      deleteButton.dataset.assetCategory = type;
+      deleteButton.dataset.action = 'delete-asset';
+
+      actions.appendChild(deleteButton);
+      item.appendChild(actions);
+    }
+
+    return item;
+  }
+
   if (asset.origin === 'upload') {
     item.classList.add('asset-card--custom');
   } else {
@@ -399,11 +613,6 @@ const createAssetCard = (asset, type) => {
 
   const preview = document.createElement('div');
   preview.className = 'asset-card__preview';
-
-  const normalizedType = normaliseTrackType(type);
-  const trackStorage = isTrackType(type) ? getTrackStorage(asset) : null;
-  const trackMediaKind = isTrackType(type) ? getTrackMediaKind(asset) : null;
-  const trackKind = trackMediaKind || trackStorage;
 
   const figure = document.createElement('figure');
   figure.className = 'asset-card__figure';
