@@ -10,7 +10,65 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-const PORT = process.env.PORT || 3000;
+const DEFAULT_PORT = 3000;
+const MAX_PORT_RETRIES = 10;
+
+const parsePort = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 65535) {
+    console.warn(
+      `Ignoring invalid port value "${value}". Please provide an integer between 1 and 65535.`
+    );
+    return null;
+  }
+
+  return parsed;
+};
+
+const getPortFromArguments = () => {
+  const argv = process.argv.slice(2);
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+
+    if (argument === '--port' || argument === '-p') {
+      const candidate = argv[index + 1];
+
+      if (!candidate) {
+        console.warn('The --port flag requires a value. Falling back to defaults.');
+        return null;
+      }
+
+      return parsePort(candidate);
+    }
+
+    if (argument.startsWith('--port=')) {
+      return parsePort(argument.split('=')[1]);
+    }
+  }
+
+  return null;
+};
+
+const cliPort = getPortFromArguments();
+const envPort = parsePort(process.env.PORT);
+
+const requestedPort = cliPort ?? envPort ?? DEFAULT_PORT;
+const portWasExplicitlyRequested = cliPort !== null || envPort !== null;
+
+let currentPort = requestedPort;
+let portAttempts = 0;
+
+const startServer = (port) => {
+  portAttempts += 1;
+  currentPort = port;
+  server.listen(port);
+};
 
 const DATA_DIR = path.join(__dirname, 'data');
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
@@ -1125,6 +1183,38 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`VisionJDR server listening on http://localhost:${PORT}`);
+server.on('listening', () => {
+  const address = server.address();
+  const resolvedPort =
+    typeof address === 'object' && address !== null ? address.port : currentPort;
+
+  console.log(`VisionJDR server listening on http://localhost:${resolvedPort}`);
 });
+
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    if (portWasExplicitlyRequested || portAttempts > MAX_PORT_RETRIES) {
+      console.error(
+        `Port ${currentPort} is already in use. Stop the other process or set the PORT environment variable to a different value before starting VisionJDR.`
+      );
+      process.exit(1);
+    }
+
+    const nextPort = requestedPort + portAttempts;
+
+    console.warn(
+      `Port ${currentPort} is in use. Retrying with port ${nextPort}. You can set the PORT environment variable or pass --port to choose a specific port.`
+    );
+
+    setTimeout(() => {
+      startServer(nextPort);
+    }, 250);
+
+    return;
+  }
+
+  console.error('Unexpected error while starting the VisionJDR server.', error);
+  process.exit(1);
+});
+
+startServer(requestedPort);
