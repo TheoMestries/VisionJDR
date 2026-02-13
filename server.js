@@ -250,9 +250,11 @@ const normaliseTrack = (track) => {
   }
 
   const storage = detectTrackKind(track);
+  const name = decodeUploadText(track.name);
 
   return {
     ...track,
+    name,
     storage: storage ?? null
   };
 };
@@ -628,9 +630,28 @@ const createAssetId = (prefix, name) => {
   return `${prefix}-${base}-${randomSuffix()}`;
 };
 
+const looksLikeMojibake = (value) => /(?:Ã.|Â|â.|�)/.test(value);
+
+const decodeUploadText = (value) => {
+  const input = (value || '').toString();
+
+  if (!input || !looksLikeMojibake(input)) {
+    return input;
+  }
+
+  const decoded = Buffer.from(input, 'latin1').toString('utf8');
+
+  if (!decoded) {
+    return input;
+  }
+
+  return looksLikeMojibake(decoded) ? input : decoded;
+};
+
 const createFileName = (originalName) => {
-  const extension = path.extname(originalName) || '.png';
-  const baseName = slugify(path.basename(originalName, extension));
+  const safeOriginalName = decodeUploadText(originalName);
+  const extension = path.extname(safeOriginalName) || '.png';
+  const baseName = slugify(path.basename(safeOriginalName, extension));
   const timestamp = Date.now().toString(36);
 
   return `${baseName}-${timestamp}-${randomSuffix()}${extension}`;
@@ -891,7 +912,7 @@ app.post(
       return;
     }
 
-    const displayName = nameInput || uploadedFile.originalname;
+    const displayName = decodeUploadText(nameInput || uploadedFile.originalname);
     const characterId = createAssetId('char', displayName);
     const publicPath = `/uploads/characters/${uploadedFile.filename}`;
     const character = {
@@ -976,7 +997,7 @@ app.post(
       return;
     }
 
-    const displayName = nameInput || uploadedFile.originalname;
+    const displayName = decodeUploadText(nameInput || uploadedFile.originalname);
     const backgroundId = createAssetId('bg', displayName);
     const publicPath = `/uploads/backgrounds/${uploadedFile.filename}`;
     const backgroundStyle = `#0f172a url("${publicPath}") center / cover no-repeat`;
@@ -1024,7 +1045,7 @@ app.post(
       return;
     }
 
-    const displayName = nameInput || uploadedFile.originalname;
+    const displayName = decodeUploadText(nameInput || uploadedFile.originalname);
     const trackId = createAssetId('track', displayName);
     const isVideo = isVideoMimeType(uploadedFile.mimetype);
     const subDirectory = isVideo ? 'video' : 'audio';
