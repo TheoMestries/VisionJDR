@@ -244,6 +244,22 @@ const detectTrackKind = (track) => {
   return null;
 };
 
+const decodeUploadText = (value) => {
+  const input = (value || '').toString();
+
+  if (!input || !looksLikeMojibake(input)) {
+    return input;
+  }
+
+  const decoded = Buffer.from(input, 'latin1').toString('utf8');
+
+  if (!decoded) {
+    return input;
+  }
+
+  return looksLikeMojibake(decoded) ? input : decoded;
+};
+
 const normaliseTrack = (track) => {
   if (!track || typeof track !== 'object') {
     return null;
@@ -632,21 +648,7 @@ const createAssetId = (prefix, name) => {
 
 const looksLikeMojibake = (value) => /(?:Ã.|Â|â.|�)/.test(value);
 
-const decodeUploadText = (value) => {
-  const input = (value || '').toString();
 
-  if (!input || !looksLikeMojibake(input)) {
-    return input;
-  }
-
-  const decoded = Buffer.from(input, 'latin1').toString('utf8');
-
-  if (!decoded) {
-    return input;
-  }
-
-  return looksLikeMojibake(decoded) ? input : decoded;
-};
 
 const createFileName = (originalName) => {
   const safeOriginalName = decodeUploadText(originalName);
