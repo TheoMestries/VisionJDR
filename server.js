@@ -243,6 +243,7 @@ const detectTrackKind = (track) => {
 
   return null;
 };
+const looksLikeMojibake = (value) => /(?:Ã.|Â|â.|�)/.test(value);
 
 const decodeUploadText = (value) => {
   const input = (value || '').toString();
@@ -646,7 +647,6 @@ const createAssetId = (prefix, name) => {
   return `${prefix}-${base}-${randomSuffix()}`;
 };
 
-const looksLikeMojibake = (value) => /(?:Ã.|Â|â.|�)/.test(value);
 
 
 
