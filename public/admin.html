@@ -112,9 +112,39 @@
               <span class="field__label">Ajouter une piste audio</span>
               <div class="audio-mixer__input-row">
                 <select id="audio-track" name="audio-track"></select>
-                <button type="button" class="audio-mixer__add">Ajouter</button>
+                <button type="button" class="audio-mixer__add" id="audio-track-add">Ajouter</button>
               </div>
             </label>
+
+            <div class="audio-playlists">
+              <label class="field audio-mixer__field">
+                <span class="field__label">Playlists enregistrées</span>
+                <div class="audio-mixer__input-row">
+                  <select id="audio-playlist" name="audio-playlist"></select>
+                  <button type="button" class="audio-mixer__add" id="audio-playlist-apply">
+                    Charger
+                  </button>
+                  <button type="button" class="audio-mixer__stop" id="audio-playlist-delete">
+                    Supprimer
+                  </button>
+                </div>
+              </label>
+
+              <label class="field audio-mixer__field">
+                <span class="field__label">Créer une playlist depuis le mix actif</span>
+                <div class="audio-mixer__input-row">
+                  <input
+                    type="text"
+                    id="audio-playlist-name"
+                    name="audio-playlist-name"
+                    placeholder="Ex. Ambiance taverne"
+                  />
+                  <button type="button" class="audio-mixer__add" id="audio-playlist-save">
+                    Enregistrer
+                  </button>
+                </div>
+              </label>
+            </div>
           </div>
 
           <p class="audio-mixer__empty" id="audio-empty">

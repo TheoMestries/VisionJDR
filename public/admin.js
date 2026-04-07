@@ -18,7 +18,12 @@ const previewVideoPlaceholder = document.getElementById('preview-video-placehold
 const previewLeft = document.getElementById('preview-left');
 const previewRight = document.getElementById('preview-right');
 const audioSelect = document.getElementById('audio-track');
-const audioAddButton = document.querySelector('.audio-mixer__add');
+const audioAddButton = document.getElementById('audio-track-add');
+const playlistSelect = document.getElementById('audio-playlist');
+const playlistApplyButton = document.getElementById('audio-playlist-apply');
+const playlistDeleteButton = document.getElementById('audio-playlist-delete');
+const playlistNameInput = document.getElementById('audio-playlist-name');
+const playlistSaveButton = document.getElementById('audio-playlist-save');
 const audioActiveList = document.getElementById('audio-active-list');
 const audioEmptyState = document.getElementById('audio-empty');
 const layoutField = layoutSelect ? layoutSelect.closest('.field') : null;
@@ -52,6 +57,10 @@ let fullCharacters = [];
 let fullAudioTracks = [];
 let fullVideoTracks = [];
 let fullTracks = [];
+let fullPlaylists = [];
+let playlists = [];
+let playlistsById = {};
+let selectedPlaylistId = null;
 
 const CAMPAIGN_STORAGE_KEY = 'visionjdr.selectedCampaign';
 
@@ -207,6 +216,7 @@ const filterAssetsForCurrentCampaign = () => {
   videoTracks = filterAssetsByCampaign(fullVideoTracks, selectedCampaignId);
 
   const filteredTracks = filterAssetsByCampaign(fullTracks, selectedCampaignId);
+  playlists = filterAssetsByCampaign(fullPlaylists, selectedCampaignId);
 
   if (!audioTracks.length && !videoTracks.length && filteredTracks.length) {
     const splitted = splitTracksByMediaKind(filteredTracks);
@@ -218,6 +228,7 @@ const filterAssetsForCurrentCampaign = () => {
   charactersById = Object.fromEntries(characters.map((item) => [item.id, item]));
   audioTracksById = Object.fromEntries(audioTracks.map((item) => [item.id, item]));
   videoTracksById = Object.fromEntries(videoTracks.map((item) => [item.id, item]));
+  playlistsById = Object.fromEntries(playlists.map((item) => [item.id, item]));
 };
 
 const refreshFormOptions = ({ preservedScene = null } = {}) => {
@@ -232,6 +243,12 @@ const refreshFormOptions = ({ preservedScene = null } = {}) => {
   populateSelect(backgroundSelect, backgrounds);
   populateVideoSelect(videoSelect, videoTracks);
   populateAudioSelect(audioSelect, audioTracks);
+  const previousPlaylistId = selectedPlaylistId;
+  populatePlaylistSelect(playlistSelect, playlists);
+  if (playlistSelect && previousPlaylistId && playlistsById[previousPlaylistId]) {
+    playlistSelect.value = previousPlaylistId;
+  }
+  selectedPlaylistId = playlistSelect?.value || null;
   const mixChanged = applyAudioMixLocally(currentAudioMix);
 
   if (mixChanged && socket) {
@@ -280,6 +297,7 @@ const refreshFormOptions = ({ preservedScene = null } = {}) => {
   renderPreview(currentScene);
 
   updateAudioControlsAvailability();
+  updatePlaylistControlsAvailability();
 };
 
 const setSelectedCampaign = (
@@ -318,6 +336,7 @@ const updateLibraryState = (nextLibrary) => {
     ? nextLibrary.videoTracks
     : [];
   fullTracks = Array.isArray(nextLibrary?.tracks) ? nextLibrary.tracks : [];
+  fullPlaylists = Array.isArray(nextLibrary?.playlists) ? nextLibrary.playlists : [];
 
   campaigns = Array.isArray(nextLibrary?.campaigns) ? nextLibrary.campaigns : [];
   campaignsById = Object.fromEntries(campaigns.map((item) => [item.id, item]));
@@ -757,6 +776,30 @@ const populateAudioSelect = (select, tracks) => {
   });
 };
 
+const populatePlaylistSelect = (select, entries) => {
+  if (!select) {
+    return;
+  }
+
+  select.innerHTML = '';
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = entries.length
+    ? 'Sélectionnez une playlist'
+    : 'Aucune playlist enregistrée';
+  placeholder.selected = true;
+  placeholder.dataset.placeholder = 'true';
+  select.appendChild(placeholder);
+
+  entries.forEach((playlist) => {
+    const option = document.createElement('option');
+    option.value = playlist.id;
+    option.textContent = playlist.name || 'Playlist';
+    select.appendChild(option);
+  });
+};
+
 const formatTimeValue = (value) => {
   if (!Number.isFinite(value) || value < 0) {
     return '0:00';
@@ -1178,6 +1221,26 @@ function updateAudioControlsAvailability() {
   audioAddButton.disabled = !hasTracks || !isAvailable;
 }
 
+function updatePlaylistControlsAvailability() {
+  const hasPlaylistControls =
+    playlistSelect && playlistApplyButton && playlistDeleteButton && playlistSaveButton;
+
+  if (!hasPlaylistControls) {
+    return;
+  }
+
+  const hasPlaylists = playlists.length > 0;
+  const selectedPlaylistId = playlistSelect.value;
+  const hasSelectedPlaylist = Boolean(selectedPlaylistId && playlistsById[selectedPlaylistId]);
+  const hasMixTracks = Array.isArray(currentAudioMix?.tracks) && currentAudioMix.tracks.length > 0;
+  const hasName = Boolean((playlistNameInput?.value || '').trim());
+
+  playlistSelect.disabled = !hasPlaylists;
+  playlistApplyButton.disabled = !hasSelectedPlaylist;
+  playlistDeleteButton.disabled = !hasSelectedPlaylist;
+  playlistSaveButton.disabled = !hasMixTracks || !hasName || !selectedCampaignId;
+}
+
 function renderAudioMix() {
   if (!audioActiveList || !audioEmptyState) {
     return;
@@ -1498,6 +1561,7 @@ function renderAudioMix() {
 
   updateAudioSelectOptions();
   updateAudioControlsAvailability();
+  updatePlaylistControlsAvailability();
 }
 
 function applyAudioMixLocally(mix) {
@@ -1524,6 +1588,100 @@ function updateAudioMixState(updater) {
 function handleAudioUpdate(mix) {
   applyAudioMixLocally(mix);
 }
+
+const saveCurrentMixAsPlaylist = async () => {
+  const name = (playlistNameInput?.value || '').trim();
+
+  if (!name) {
+    statusElement.textContent = 'Saisissez un nom de playlist.';
+    return;
+  }
+
+  const trackIds = (Array.isArray(currentAudioMix?.tracks) ? currentAudioMix.tracks : [])
+    .map((entry) => entry.id)
+    .filter((id) => audioTracksById[id]);
+
+  if (!trackIds.length) {
+    statusElement.textContent = 'Ajoutez au moins une piste au mix avant de créer une playlist.';
+    return;
+  }
+
+  if (!selectedCampaignId) {
+    statusElement.textContent = 'Sélectionnez une campagne avant de créer une playlist.';
+    return;
+  }
+
+  const response = await fetch('/api/playlists', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name,
+      campaignId: selectedCampaignId,
+      trackIds
+    })
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    statusElement.textContent = payload.error || 'Impossible de sauvegarder la playlist.';
+    return;
+  }
+
+  if (playlistNameInput) {
+    playlistNameInput.value = '';
+  }
+
+  statusElement.textContent = `Playlist « ${name} » enregistrée.`;
+  updatePlaylistControlsAvailability();
+};
+
+const applySelectedPlaylist = () => {
+  const selectedPlaylistId = playlistSelect?.value || '';
+  const playlist = playlistsById[selectedPlaylistId];
+
+  if (!playlist) {
+    statusElement.textContent = 'Sélectionnez une playlist à charger.';
+    updatePlaylistControlsAvailability();
+    return;
+  }
+
+  const playlistTracks = Array.isArray(playlist.trackIds) ? playlist.trackIds : [];
+  const nextTracks = playlistTracks
+    .filter((trackId) => audioTracksById[trackId])
+    .map((trackId) => ({
+      id: trackId,
+      volume: 1,
+      loop: false,
+      playing: true,
+      position: 0
+    }));
+
+  updateAudioMixState(() => nextTracks);
+  statusElement.textContent = `Playlist « ${playlist.name} » chargée.`;
+};
+
+const deleteSelectedPlaylist = async () => {
+  const selectedPlaylistId = playlistSelect?.value || '';
+  const playlist = playlistsById[selectedPlaylistId];
+
+  if (!playlist) {
+    statusElement.textContent = 'Sélectionnez une playlist à supprimer.';
+    updatePlaylistControlsAvailability();
+    return;
+  }
+
+  const response = await fetch(`/api/playlists/${encodeURIComponent(playlist.id)}`, {
+    method: 'DELETE'
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    statusElement.textContent = payload.error || 'Impossible de supprimer cette playlist.';
+    return;
+  }
+
+  statusElement.textContent = `Playlist « ${playlist.name} » supprimée.`;
+};
 
 const createOrientationSelect = (prefix, index, sideLabel) => {
   const select = document.createElement('select');
@@ -1935,11 +2093,14 @@ const initialise = async () => {
   populateSelect(backgroundSelect, backgrounds);
   populateVideoSelect(videoSelect, videoTracks);
   populateAudioSelect(audioSelect, audioTracks);
+  populatePlaylistSelect(playlistSelect, playlists);
+  selectedPlaylistId = playlistSelect?.value || null;
   applyAudioMixLocally(audioData.mix);
   updateVideoSelectAvailability();
 
   attachFormListeners();
   updateAudioControlsAvailability();
+  updatePlaylistControlsAvailability();
 
   if (sceneTypeSelect) {
     updateSceneTypeUI(getSceneTypeFromValue(sceneTypeSelect.value));
@@ -1963,6 +2124,19 @@ if (campaignSelect) {
 if (audioSelect) {
   audioSelect.addEventListener('change', () => {
     updateAudioControlsAvailability();
+  });
+}
+
+if (playlistSelect) {
+  playlistSelect.addEventListener('change', () => {
+    selectedPlaylistId = playlistSelect.value || null;
+    updatePlaylistControlsAvailability();
+  });
+}
+
+if (playlistNameInput) {
+  playlistNameInput.addEventListener('input', () => {
+    updatePlaylistControlsAvailability();
   });
 }
 
@@ -1997,6 +2171,24 @@ if (audioAddButton) {
     }
 
     updateAudioControlsAvailability();
+  });
+}
+
+if (playlistApplyButton) {
+  playlistApplyButton.addEventListener('click', () => {
+    applySelectedPlaylist();
+  });
+}
+
+if (playlistDeleteButton) {
+  playlistDeleteButton.addEventListener('click', () => {
+    deleteSelectedPlaylist();
+  });
+}
+
+if (playlistSaveButton) {
+  playlistSaveButton.addEventListener('click', () => {
+    saveCurrentMixAsPlaylist();
   });
 }
 
