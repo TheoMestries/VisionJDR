@@ -35,6 +35,8 @@ const playlistButtonsElement = document.getElementById('audio-playlist-buttons')
 const playlistDetailTitle = document.getElementById('audio-playlist-detail-title');
 const playlistDetailFolder = document.getElementById('audio-playlist-detail-folder');
 const playlistDetailTracks = document.getElementById('audio-playlist-detail-tracks');
+const playlistTrackSelect = document.getElementById('audio-playlist-track');
+const playlistTrackAddButton = document.getElementById('audio-playlist-track-add');
 const audioActiveList = document.getElementById('audio-active-list');
 const audioEmptyState = document.getElementById('audio-empty');
 const layoutField = layoutSelect ? layoutSelect.closest('.field') : null;
@@ -259,6 +261,7 @@ const refreshFormOptions = ({ preservedScene = null } = {}) => {
   populateSelect(backgroundSelect, backgrounds);
   populateVideoSelect(videoSelect, videoTracks);
   populateAudioSelect(audioSelect, audioTracks);
+  populateAudioSelect(playlistTrackSelect, audioTracks);
   const previousPlaylistId = selectedPlaylistId;
   if (previousPlaylistId && playlistsById[previousPlaylistId]) {
     selectedPlaylistId = previousPlaylistId;
@@ -874,9 +877,47 @@ const renderPlaylistDetail = () => {
 
   validTrackIds.forEach((trackId) => {
     const entry = document.createElement('li');
-    entry.textContent = audioTracksById[trackId]?.name || 'Piste audio';
+    entry.className = 'audio-playlists__detail-track';
+
+    const name = document.createElement('span');
+    name.textContent = audioTracksById[trackId]?.name || 'Piste audio';
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'audio-mixer__stop audio-playlists__track-remove';
+    removeButton.textContent = 'Retirer';
+    removeButton.addEventListener('click', () => {
+      updatePlaylistTrackMembership(trackId, 'remove');
+    });
+
+    entry.append(name, removeButton);
     playlistDetailTracks.appendChild(entry);
   });
+};
+
+const updatePlaylistTrackMembership = async (trackId, action = 'add') => {
+  const playlist = selectedPlaylistId ? playlistsById[selectedPlaylistId] : null;
+
+  if (!playlist) {
+    statusElement.textContent = 'Sélectionnez une playlist.';
+    return;
+  }
+
+  const response = await fetch(`/api/playlists/${encodeURIComponent(playlist.id)}/tracks`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trackId, action })
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    statusElement.textContent =
+      payload.error || 'Impossible de mettre à jour les pistes de la playlist.';
+    return;
+  }
+
+  statusElement.textContent =
+    action === 'remove' ? 'Piste retirée de la playlist.' : 'Piste ajoutée à la playlist.';
 };
 
 const renderPlaylistWorkspace = () => {
@@ -1463,14 +1504,20 @@ function updatePlaylistControlsAvailability() {
   const hasSelectedPlaylist = Boolean(selectedPlaylistId && playlistsById[selectedPlaylistId]);
   const hasMixTracks = Array.isArray(currentAudioMix?.tracks) && currentAudioMix.tracks.length > 0;
   const hasName = Boolean((playlistNameInput?.value || '').trim());
+  const hasPlaylistTrackSelection = Boolean(
+    playlistTrackSelect?.value && audioTracksById[playlistTrackSelect.value]
+  );
 
   playlistApplyButton.disabled = !hasSelectedPlaylist;
   playlistDeleteButton.disabled = !hasSelectedPlaylist;
-  playlistSaveButton.disabled = !hasMixTracks || !hasName || !selectedCampaignId;
+  playlistSaveButton.disabled = !hasName || !selectedCampaignId;
   playlistStartButton.disabled = !hasSelectedPlaylist;
   playlistStartRandomButton.disabled = !hasSelectedPlaylist;
   playlistStopButton.disabled = !hasMixTracks;
   playlistCycleInput.disabled = !hasSelectedPlaylist && !hasMixTracks && !hasPlaylists;
+  if (playlistTrackAddButton) {
+    playlistTrackAddButton.disabled = !hasSelectedPlaylist || !hasPlaylistTrackSelection;
+  }
   updateActivePlaylistDisplay();
 }
 
@@ -1831,15 +1878,6 @@ const saveCurrentMixAsPlaylist = async () => {
     return;
   }
 
-  const trackIds = (Array.isArray(currentAudioMix?.tracks) ? currentAudioMix.tracks : [])
-    .map((entry) => entry.id)
-    .filter((id) => audioTracksById[id]);
-
-  if (!trackIds.length) {
-    statusElement.textContent = 'Ajoutez au moins une piste au mix avant de créer une playlist.';
-    return;
-  }
-
   if (!selectedCampaignId) {
     statusElement.textContent = 'Sélectionnez une campagne avant de créer une playlist.';
     return;
@@ -1852,7 +1890,7 @@ const saveCurrentMixAsPlaylist = async () => {
       name,
       folder,
       campaignId: selectedCampaignId,
-      trackIds
+      trackIds: []
     })
   });
 
@@ -1869,7 +1907,7 @@ const saveCurrentMixAsPlaylist = async () => {
     playlistFolderInput.value = '';
   }
 
-  statusElement.textContent = `Playlist « ${name} » enregistrée.`;
+  statusElement.textContent = `Playlist « ${name} » enregistrée. Ajoutez des pistes dans la colonne de droite.`;
   updatePlaylistControlsAvailability();
 };
 
@@ -2403,6 +2441,7 @@ const initialise = async () => {
   populateSelect(backgroundSelect, backgrounds);
   populateVideoSelect(videoSelect, videoTracks);
   populateAudioSelect(audioSelect, audioTracks);
+  populateAudioSelect(playlistTrackSelect, audioTracks);
   renderPlaylistWorkspace();
   if (activePlaylistId && !playlistsById[activePlaylistId]) {
     activePlaylistId = null;
@@ -2442,6 +2481,12 @@ if (audioSelect) {
 
 if (playlistNameInput) {
   playlistNameInput.addEventListener('input', () => {
+    updatePlaylistControlsAvailability();
+  });
+}
+
+if (playlistTrackSelect) {
+  playlistTrackSelect.addEventListener('change', () => {
     updatePlaylistControlsAvailability();
   });
 }
@@ -2495,6 +2540,19 @@ if (playlistDeleteButton) {
 if (playlistSaveButton) {
   playlistSaveButton.addEventListener('click', () => {
     saveCurrentMixAsPlaylist();
+  });
+}
+
+if (playlistTrackAddButton) {
+  playlistTrackAddButton.addEventListener('click', () => {
+    const trackId = (playlistTrackSelect?.value || '').toString();
+
+    if (!trackId || !audioTracksById[trackId]) {
+      updatePlaylistControlsAvailability();
+      return;
+    }
+
+    updatePlaylistTrackMembership(trackId, 'add');
   });
 }
 

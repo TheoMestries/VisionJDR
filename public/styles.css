@@ -653,6 +653,18 @@ main.layout {
   gap: 0.45rem;
 }
 
+.audio-playlists__detail-track {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.audio-playlists__track-remove {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.8rem;
+}
+
 .audio-playlists__detail-empty,
 .audio-playlists__empty {
   margin: 0;
