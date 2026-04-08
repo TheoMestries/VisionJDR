@@ -1652,7 +1652,7 @@ const applySelectedPlaylist = () => {
       id: trackId,
       volume: 1,
       loop: false,
-      playing: true,
+      playing: false,
       position: 0
     }));
 
