@@ -27,6 +27,8 @@ const playlistSaveButton = document.getElementById('audio-playlist-save');
 const playlistStartButton = document.getElementById('audio-playlist-start');
 const playlistStartRandomButton = document.getElementById('audio-playlist-start-random');
 const playlistCycleInput = document.getElementById('audio-playlist-cycle');
+const playlistActiveElement = document.getElementById('audio-playlist-active');
+const playlistsContainer = document.querySelector('.audio-playlists');
 const audioActiveList = document.getElementById('audio-active-list');
 const audioEmptyState = document.getElementById('audio-empty');
 const layoutField = layoutSelect ? layoutSelect.closest('.field') : null;
@@ -64,6 +66,7 @@ let fullPlaylists = [];
 let playlists = [];
 let playlistsById = {};
 let selectedPlaylistId = null;
+let activePlaylistId = null;
 let activePlaylistTrackOrder = [];
 let activePlaylistLoop = false;
 
@@ -805,6 +808,26 @@ const populatePlaylistSelect = (select, entries) => {
   });
 };
 
+const updateActivePlaylistDisplay = () => {
+  if (!playlistActiveElement) {
+    return;
+  }
+
+  const activePlaylist =
+    activePlaylistId && playlistsById[activePlaylistId] ? playlistsById[activePlaylistId] : null;
+
+  if (!activePlaylist) {
+    playlistActiveElement.textContent = 'Aucune playlist active.';
+    playlistActiveElement.dataset.state = 'idle';
+    playlistsContainer?.classList.remove('audio-playlists--active');
+    return;
+  }
+
+  playlistActiveElement.textContent = `Playlist active : ${activePlaylist.name || 'Playlist'}`;
+  playlistActiveElement.dataset.state = 'active';
+  playlistsContainer?.classList.add('audio-playlists--active');
+};
+
 const formatTimeValue = (value) => {
   if (!Number.isFinite(value) || value < 0) {
     return '0:00';
@@ -1317,6 +1340,7 @@ function updatePlaylistControlsAvailability() {
   playlistStartButton.disabled = !hasMixTracks;
   playlistStartRandomButton.disabled = !hasMixTracks;
   playlistCycleInput.disabled = !hasMixTracks;
+  updateActivePlaylistDisplay();
 }
 
 function renderAudioMix() {
@@ -1735,8 +1759,10 @@ const applySelectedPlaylist = () => {
     }));
 
   updateAudioMixState(() => nextTracks);
+  activePlaylistId = playlist.id;
   activePlaylistTrackOrder = nextTracks.map((track) => track.id);
   statusElement.textContent = `Playlist « ${playlist.name} » chargée.`;
+  updateActivePlaylistDisplay();
 };
 
 const shuffleTrackIds = (trackIds) => {
@@ -1796,7 +1822,12 @@ const deleteSelectedPlaylist = async () => {
     return;
   }
 
+  if (activePlaylistId === playlist.id) {
+    activePlaylistId = null;
+  }
+
   statusElement.textContent = `Playlist « ${playlist.name} » supprimée.`;
+  updateActivePlaylistDisplay();
 };
 
 const createOrientationSelect = (prefix, index, sideLabel) => {
@@ -2211,12 +2242,16 @@ const initialise = async () => {
   populateAudioSelect(audioSelect, audioTracks);
   populatePlaylistSelect(playlistSelect, playlists);
   selectedPlaylistId = playlistSelect?.value || null;
+  if (activePlaylistId && !playlistsById[activePlaylistId]) {
+    activePlaylistId = null;
+  }
   applyAudioMixLocally(audioData.mix);
   updateVideoSelectAvailability();
 
   attachFormListeners();
   updateAudioControlsAvailability();
   updatePlaylistControlsAvailability();
+  updateActivePlaylistDisplay();
 
   if (sceneTypeSelect) {
     updateSceneTypeUI(getSceneTypeFromValue(sceneTypeSelect.value));
