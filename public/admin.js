@@ -24,6 +24,9 @@ const playlistApplyButton = document.getElementById('audio-playlist-apply');
 const playlistDeleteButton = document.getElementById('audio-playlist-delete');
 const playlistNameInput = document.getElementById('audio-playlist-name');
 const playlistSaveButton = document.getElementById('audio-playlist-save');
+const playlistStartButton = document.getElementById('audio-playlist-start');
+const playlistStartRandomButton = document.getElementById('audio-playlist-start-random');
+const playlistCycleInput = document.getElementById('audio-playlist-cycle');
 const audioActiveList = document.getElementById('audio-active-list');
 const audioEmptyState = document.getElementById('audio-empty');
 const layoutField = layoutSelect ? layoutSelect.closest('.field') : null;
@@ -61,6 +64,8 @@ let fullPlaylists = [];
 let playlists = [];
 let playlistsById = {};
 let selectedPlaylistId = null;
+let activePlaylistTrackOrder = [];
+let activePlaylistLoop = false;
 
 const CAMPAIGN_STORAGE_KEY = 'visionjdr.selectedCampaign';
 
@@ -853,9 +858,24 @@ const advancePlaylistTrack = (finishedTrackId) => {
       return currentTracks;
     }
 
-    const nextIndex = currentTracks.findIndex(
-      (track, index) => index > finishedIndex && audioTracksById[track.id]
-    );
+    const playableTrackIds = currentTracks
+      .map((track) => track.id)
+      .filter((id) => audioTracksById[id]);
+
+    if (!playableTrackIds.length) {
+      return currentTracks;
+    }
+
+    const fallbackOrder = activePlaylistTrackOrder.length ? activePlaylistTrackOrder : playableTrackIds;
+    const playlistOrder = fallbackOrder.filter((id) => playableTrackIds.includes(id));
+    const finishedOrderIndex = playlistOrder.indexOf(finishedTrackId);
+    const hasNextTrack = finishedOrderIndex >= 0 && finishedOrderIndex < playlistOrder.length - 1;
+    const shouldRestartFromBeginning = !hasNextTrack && activePlaylistLoop && playlistOrder.length > 0;
+    const nextTrackId = hasNextTrack
+      ? playlistOrder[finishedOrderIndex + 1]
+      : shouldRestartFromBeginning
+        ? playlistOrder[0]
+        : null;
 
     return currentTracks.map((track, index) => {
       if (index === finishedIndex) {
@@ -866,7 +886,7 @@ const advancePlaylistTrack = (finishedTrackId) => {
         };
       }
 
-      if (index === nextIndex) {
+      if (track.id === nextTrackId) {
         return {
           ...track,
           playing: true,
@@ -1272,7 +1292,13 @@ function updateAudioControlsAvailability() {
 
 function updatePlaylistControlsAvailability() {
   const hasPlaylistControls =
-    playlistSelect && playlistApplyButton && playlistDeleteButton && playlistSaveButton;
+    playlistSelect &&
+    playlistApplyButton &&
+    playlistDeleteButton &&
+    playlistSaveButton &&
+    playlistStartButton &&
+    playlistStartRandomButton &&
+    playlistCycleInput;
 
   if (!hasPlaylistControls) {
     return;
@@ -1288,6 +1314,9 @@ function updatePlaylistControlsAvailability() {
   playlistApplyButton.disabled = !hasSelectedPlaylist;
   playlistDeleteButton.disabled = !hasSelectedPlaylist;
   playlistSaveButton.disabled = !hasMixTracks || !hasName || !selectedCampaignId;
+  playlistStartButton.disabled = !hasMixTracks;
+  playlistStartRandomButton.disabled = !hasMixTracks;
+  playlistCycleInput.disabled = !hasMixTracks;
 }
 
 function renderAudioMix() {
@@ -1706,7 +1735,45 @@ const applySelectedPlaylist = () => {
     }));
 
   updateAudioMixState(() => nextTracks);
+  activePlaylistTrackOrder = nextTracks.map((track) => track.id);
   statusElement.textContent = `Playlist « ${playlist.name} » chargée.`;
+};
+
+const shuffleTrackIds = (trackIds) => {
+  const shuffled = [...trackIds];
+
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
+  }
+
+  return shuffled;
+};
+
+const startSelectedPlaylistPlayback = ({ random = false } = {}) => {
+  const tracks = Array.isArray(currentAudioMix?.tracks) ? currentAudioMix.tracks : [];
+  const playableTrackIds = tracks.map((track) => track.id).filter((id) => audioTracksById[id]);
+
+  if (!playableTrackIds.length) {
+    statusElement.textContent = 'Chargez une playlist avant de lancer la lecture.';
+    updatePlaylistControlsAvailability();
+    return;
+  }
+
+  activePlaylistTrackOrder = random ? shuffleTrackIds(playableTrackIds) : [...playableTrackIds];
+  const firstTrackId = activePlaylistTrackOrder[0];
+
+  updateAudioMixState((currentTracks) =>
+    currentTracks.map((track) => ({
+      ...track,
+      playing: track.id === firstTrackId,
+      position: 0
+    }))
+  );
+
+  const modeLabel = random ? 'en aléatoire' : 'dans l’ordre';
+  statusElement.textContent = `Lecture de la playlist lancée ${modeLabel}.`;
+  updatePlaylistControlsAvailability();
 };
 
 const deleteSelectedPlaylist = async () => {
@@ -2238,6 +2305,27 @@ if (playlistDeleteButton) {
 if (playlistSaveButton) {
   playlistSaveButton.addEventListener('click', () => {
     saveCurrentMixAsPlaylist();
+  });
+}
+
+if (playlistStartButton) {
+  playlistStartButton.addEventListener('click', () => {
+    startSelectedPlaylistPlayback({ random: false });
+  });
+}
+
+if (playlistStartRandomButton) {
+  playlistStartRandomButton.addEventListener('click', () => {
+    startSelectedPlaylistPlayback({ random: true });
+  });
+}
+
+if (playlistCycleInput) {
+  playlistCycleInput.addEventListener('change', () => {
+    activePlaylistLoop = Boolean(playlistCycleInput.checked);
+    statusElement.textContent = activePlaylistLoop
+      ? 'Boucle de playlist activée.'
+      : 'Boucle de playlist désactivée.';
   });
 }
 
