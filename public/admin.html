@@ -109,10 +109,17 @@
 
           <div class="audio-mixer__controls">
             <label class="field audio-mixer__field">
-              <span class="field__label">Ajouter une piste audio</span>
+              <span class="field__label">Ajouter une piste audio seule (indépendante des playlists)</span>
               <div class="audio-mixer__input-row">
                 <select id="audio-track" name="audio-track"></select>
                 <button type="button" class="audio-mixer__add" id="audio-track-add">Ajouter</button>
+              </div>
+              <div class="audio-playlists__mix">
+                <h4>Pistes audio seules en cours</h4>
+                <p class="audio-mixer__empty" id="audio-manual-empty">
+                  Aucune piste audio seule en cours.
+                </p>
+                <ul class="audio-mixer__list" id="audio-manual-active-list" aria-live="polite"></ul>
               </div>
             </label>
 
@@ -161,11 +168,11 @@
                       </button>
                     </div>
                     <div class="audio-playlists__mix">
-                      <h4>Mix audio en cours</h4>
-                      <p class="audio-mixer__empty" id="audio-empty">
-                        Aucune piste n'est diffusée pour le moment.
+                      <h4>Mix playlist en cours</h4>
+                      <p class="audio-mixer__empty" id="audio-playlist-empty">
+                        Aucune piste playlist n'est diffusée pour le moment.
                       </p>
-                      <ul class="audio-mixer__list" id="audio-active-list" aria-live="polite"></ul>
+                      <ul class="audio-mixer__list" id="audio-playlist-active-list" aria-live="polite"></ul>
                     </div>
                     <div class="audio-mixer__input-row">
                       <button type="button" class="audio-mixer__add" id="audio-playlist-start">
