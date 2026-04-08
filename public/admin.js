@@ -34,7 +34,6 @@ const playlistFoldersElement = document.getElementById('audio-playlist-folders')
 const playlistButtonsElement = document.getElementById('audio-playlist-buttons');
 const playlistDetailTitle = document.getElementById('audio-playlist-detail-title');
 const playlistDetailFolder = document.getElementById('audio-playlist-detail-folder');
-const playlistDetailTracks = document.getElementById('audio-playlist-detail-tracks');
 const playlistTrackSelect = document.getElementById('audio-playlist-track');
 const playlistTrackAddButton = document.getElementById('audio-playlist-track-add');
 const audioActiveList = document.getElementById('audio-active-list');
@@ -842,7 +841,7 @@ const ensurePlaylistSelections = () => {
 };
 
 const renderPlaylistDetail = () => {
-  if (!playlistDetailTitle || !playlistDetailFolder || !playlistDetailTracks) {
+  if (!playlistDetailTitle || !playlistDetailFolder) {
     return;
   }
 
@@ -851,48 +850,12 @@ const renderPlaylistDetail = () => {
   if (!playlist) {
     playlistDetailTitle.textContent = 'Sélectionnez une playlist';
     playlistDetailFolder.textContent = 'Dossier : —';
-    playlistDetailTracks.replaceChildren();
-    const emptyLine = document.createElement('li');
-    emptyLine.className = 'audio-playlists__detail-empty';
-    emptyLine.textContent = 'Aucune playlist sélectionnée.';
-    playlistDetailTracks.appendChild(emptyLine);
     return;
   }
 
   const folder = normalisePlaylistFolder(playlist.folder);
   playlistDetailTitle.textContent = playlist.name || 'Playlist';
   playlistDetailFolder.textContent = `Dossier : ${folder}`;
-  playlistDetailTracks.replaceChildren();
-
-  const trackIds = Array.isArray(playlist.trackIds) ? playlist.trackIds : [];
-  const validTrackIds = trackIds.filter((trackId) => audioTracksById[trackId]);
-
-  if (!validTrackIds.length) {
-    const emptyLine = document.createElement('li');
-    emptyLine.className = 'audio-playlists__detail-empty';
-    emptyLine.textContent = 'Cette playlist ne contient aucune piste audio disponible.';
-    playlistDetailTracks.appendChild(emptyLine);
-    return;
-  }
-
-  validTrackIds.forEach((trackId) => {
-    const entry = document.createElement('li');
-    entry.className = 'audio-playlists__detail-track';
-
-    const name = document.createElement('span');
-    name.textContent = audioTracksById[trackId]?.name || 'Piste audio';
-
-    const removeButton = document.createElement('button');
-    removeButton.type = 'button';
-    removeButton.className = 'audio-mixer__stop audio-playlists__track-remove';
-    removeButton.textContent = 'Retirer';
-    removeButton.addEventListener('click', () => {
-      updatePlaylistTrackMembership(trackId, 'remove');
-    });
-
-    entry.append(name, removeButton);
-    playlistDetailTracks.appendChild(entry);
-  });
 };
 
 const updatePlaylistTrackMembership = async (trackId, action = 'add') => {
