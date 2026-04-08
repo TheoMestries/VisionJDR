@@ -26,6 +26,7 @@ const playlistNameInput = document.getElementById('audio-playlist-name');
 const playlistSaveButton = document.getElementById('audio-playlist-save');
 const playlistStartButton = document.getElementById('audio-playlist-start');
 const playlistStartRandomButton = document.getElementById('audio-playlist-start-random');
+const playlistStopButton = document.getElementById('audio-playlist-stop');
 const playlistCycleInput = document.getElementById('audio-playlist-cycle');
 const playlistActiveElement = document.getElementById('audio-playlist-active');
 const playlistsContainer = document.querySelector('.audio-playlists');
@@ -1321,6 +1322,7 @@ function updatePlaylistControlsAvailability() {
     playlistSaveButton &&
     playlistStartButton &&
     playlistStartRandomButton &&
+    playlistStopButton &&
     playlistCycleInput;
 
   if (!hasPlaylistControls) {
@@ -1339,6 +1341,7 @@ function updatePlaylistControlsAvailability() {
   playlistSaveButton.disabled = !hasMixTracks || !hasName || !selectedCampaignId;
   playlistStartButton.disabled = !hasMixTracks;
   playlistStartRandomButton.disabled = !hasMixTracks;
+  playlistStopButton.disabled = !hasMixTracks;
   playlistCycleInput.disabled = !hasMixTracks;
   updateActivePlaylistDisplay();
 }
@@ -1799,6 +1802,23 @@ const startSelectedPlaylistPlayback = ({ random = false } = {}) => {
 
   const modeLabel = random ? 'en aléatoire' : 'dans l’ordre';
   statusElement.textContent = `Lecture de la playlist lancée ${modeLabel}.`;
+  updatePlaylistControlsAvailability();
+};
+
+const stopPlaylistPlaybackAndClearMix = () => {
+  const hasTracks = Array.isArray(currentAudioMix?.tracks) && currentAudioMix.tracks.length > 0;
+
+  if (!hasTracks) {
+    statusElement.textContent = 'Aucune piste à arrêter.';
+    updatePlaylistControlsAvailability();
+    return;
+  }
+
+  updateAudioMixState(() => []);
+  activePlaylistId = null;
+  activePlaylistTrackOrder = [];
+  statusElement.textContent = 'Lecture arrêtée et mix audio vidé.';
+  updateActivePlaylistDisplay();
   updatePlaylistControlsAvailability();
 };
 
@@ -2352,6 +2372,12 @@ if (playlistStartButton) {
 if (playlistStartRandomButton) {
   playlistStartRandomButton.addEventListener('click', () => {
     startSelectedPlaylistPlayback({ random: true });
+  });
+}
+
+if (playlistStopButton) {
+  playlistStopButton.addEventListener('click', () => {
+    stopPlaylistPlaybackAndClearMix();
   });
 }
 
