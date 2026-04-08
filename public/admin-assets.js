@@ -23,7 +23,8 @@ let library = {
   tracks: [],
   audioTracks: [],
   videoTracks: [],
-  campaigns: []
+  campaigns: [],
+  playlists: []
 };
 
 let campaigns = [];
@@ -813,6 +814,83 @@ const createAssetCard = (asset, type) => {
 
   item.appendChild(figure);
 
+  if (type === 'track-audio') {
+    const campaignPlaylists = filterAssetsByCampaign(library.playlists, selectedCampaignId);
+
+    if (campaignPlaylists.length) {
+      const playlistActions = document.createElement('div');
+      playlistActions.className = 'asset-card__playlist-actions';
+
+      const playlistSelect = document.createElement('select');
+      playlistSelect.className = 'asset-card__playlist-select';
+      playlistSelect.setAttribute('aria-label', `Ajouter ${asset.name || 'la piste'} à une playlist`);
+
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Ajouter à une playlist…';
+      placeholder.selected = true;
+      playlistSelect.appendChild(placeholder);
+
+      campaignPlaylists.forEach((playlist) => {
+        const option = document.createElement('option');
+        option.value = playlist.id;
+        option.textContent = playlist.name || 'Playlist';
+        playlistSelect.appendChild(option);
+      });
+
+      const addButton = document.createElement('button');
+      addButton.type = 'button';
+      addButton.className = 'asset-card__button asset-card__button--neutral';
+      addButton.textContent = 'Ajouter';
+      addButton.dataset.action = 'add-track-to-playlist';
+      addButton.dataset.assetId = asset.id;
+      addButton.disabled = true;
+
+      playlistSelect.addEventListener('change', () => {
+        addButton.disabled = !playlistSelect.value;
+      });
+
+      addButton.addEventListener('click', async () => {
+        const playlistId = playlistSelect.value;
+
+        if (!playlistId) {
+          return;
+        }
+
+        addButton.disabled = true;
+        const originalText = addButton.textContent;
+        addButton.textContent = 'Ajout…';
+
+        try {
+          const response = await fetch(`/api/playlists/${encodeURIComponent(playlistId)}/tracks`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trackId: asset.id, action: 'add' })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            setStatus(trackStatus, errorData?.error || 'Impossible d’ajouter la piste à la playlist.', 'error');
+            clearStatusLater(trackStatus);
+          } else {
+            setStatus(trackStatus, 'Piste ajoutée à la playlist.', 'success');
+            clearStatusLater(trackStatus);
+            await refreshLibrary();
+          }
+        } catch (error) {
+          setStatus(trackStatus, "Une erreur réseau est survenue.", 'error');
+          clearStatusLater(trackStatus);
+        } finally {
+          addButton.textContent = originalText;
+          addButton.disabled = !playlistSelect.value;
+        }
+      });
+
+      playlistActions.append(playlistSelect, addButton);
+      item.appendChild(playlistActions);
+    }
+  }
+
 
   if (!isTrackType(type)) {
     const origin = document.createElement('p');
@@ -918,7 +996,8 @@ const refreshLibrary = async () => {
     tracks: Array.isArray(data.tracks) ? data.tracks : [],
     audioTracks: Array.isArray(data.audioTracks) ? data.audioTracks : [],
     videoTracks: Array.isArray(data.videoTracks) ? data.videoTracks : [],
-    campaigns: Array.isArray(data.campaigns) ? data.campaigns : []
+    campaigns: Array.isArray(data.campaigns) ? data.campaigns : [],
+    playlists: Array.isArray(data.playlists) ? data.playlists : []
   };
 
   if (!library.audioTracks.length && !library.videoTracks.length && library.tracks.length) {

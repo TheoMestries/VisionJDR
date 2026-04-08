@@ -150,6 +150,12 @@ const createCampaign = (name) => ({
   createdAt: new Date().toISOString()
 });
 
+const createPlaylistId = (name) => {
+  const base = slugify(name || 'playlist');
+  const timestamp = Date.now().toString(36);
+  return `playlist-${base}-${timestamp}-${randomSuffix()}`;
+};
+
 const normaliseCampaign = (campaign) => {
   if (!campaign || typeof campaign !== 'object') {
     return null;
@@ -288,7 +294,8 @@ const loadCustomLibrary = () => {
         campaigns: [defaultCampaign],
         backgrounds: [],
         characters: [],
-        tracks: []
+        tracks: [],
+        playlists: []
       },
       needsPersist: true
     };
@@ -374,8 +381,52 @@ const loadCustomLibrary = () => {
         .filter((track) => track !== null)
     : [];
 
+  const playlists = Array.isArray(stored.playlists)
+    ? stored.playlists
+        .map((playlist) => {
+          if (!playlist || typeof playlist !== 'object') {
+            needsPersist = true;
+            return null;
+          }
+
+          const name = (playlist.name || '').toString().trim();
+          const id = (playlist.id || '').toString().trim() || createPlaylistId(name || 'playlist');
+          const inputCampaignId = (playlist.campaignId || '').toString().trim();
+          const campaignId = inputCampaignId && validCampaignIds.has(inputCampaignId)
+            ? inputCampaignId
+            : null;
+          const trackIds = Array.isArray(playlist.trackIds)
+            ? playlist.trackIds
+                .map((entry) => (entry || '').toString().trim())
+                .filter(Boolean)
+            : [];
+
+          if (!name) {
+            needsPersist = true;
+            return null;
+          }
+
+          if (
+            id !== playlist.id ||
+            campaignId !== playlist.campaignId ||
+            !Array.isArray(playlist.trackIds)
+          ) {
+            needsPersist = true;
+          }
+
+          return {
+            id,
+            name,
+            campaignId,
+            trackIds,
+            createdAt: playlist.createdAt || new Date().toISOString()
+          };
+        })
+        .filter((playlist) => playlist !== null)
+    : [];
+
   return {
-    library: { campaigns, backgrounds, characters, tracks },
+    library: { campaigns, backgrounds, characters, tracks, playlists },
     needsPersist
   };
 };
@@ -402,7 +453,8 @@ let library = {
   audioTracks: [],
   videoTracks: [],
   layouts: [],
-  campaigns: []
+  campaigns: [],
+  playlists: []
 };
 let currentAudioMix = { tracks: [] };
 
@@ -595,10 +647,60 @@ const refreshLibrary = () => {
         .map(normaliseCampaignAttachment)
         .filter((track) => track !== null)
     : [];
+  const customTracksById = Object.fromEntries(customTracks.map((track) => [track.id, track]));
+  const customPlaylists = Array.isArray(customLibrary.playlists)
+    ? customLibrary.playlists
+        .map((playlist) => {
+          if (!playlist || typeof playlist !== 'object') {
+            shouldPersistLibrary = true;
+            return null;
+          }
+
+          const name = (playlist.name || '').toString().trim();
+          const id = (playlist.id || '').toString().trim() || createPlaylistId(name || 'playlist');
+          const rawCampaignId = (playlist.campaignId || '').toString().trim();
+          const campaignId = rawCampaignId && campaignsById[rawCampaignId] ? rawCampaignId : null;
+          const uniqueTrackIds = Array.isArray(playlist.trackIds)
+            ? Array.from(
+                new Set(
+                  playlist.trackIds
+                    .map((trackId) => (trackId || '').toString().trim())
+                    .filter(
+                      (trackId) => trackId && detectTrackKind(customTracksById[trackId]) === 'audio'
+                    )
+                )
+              )
+            : [];
+
+          if (!name) {
+            shouldPersistLibrary = true;
+            return null;
+          }
+
+          if (
+            id !== playlist.id ||
+            campaignId !== playlist.campaignId ||
+            !Array.isArray(playlist.trackIds) ||
+            uniqueTrackIds.length !== playlist.trackIds.length
+          ) {
+            shouldPersistLibrary = true;
+          }
+
+          return {
+            id,
+            name,
+            campaignId,
+            trackIds: uniqueTrackIds,
+            createdAt: playlist.createdAt || new Date().toISOString()
+          };
+        })
+        .filter((playlist) => playlist !== null)
+    : [];
 
   customLibrary.backgrounds = customBackgrounds;
   customLibrary.characters = customCharacters;
   customLibrary.tracks = customTracks;
+  customLibrary.playlists = customPlaylists;
 
   backgrounds = [...defaultBackgroundList, ...customBackgrounds];
   characters = [...defaultCharacterList, ...customCharacters];
@@ -615,7 +717,8 @@ const refreshLibrary = () => {
     audioTracks: audio,
     videoTracks: video,
     layouts: sceneLayouts,
-    campaigns
+    campaigns,
+    playlists: customPlaylists
   };
 
   shouldPersistLibrary = shouldPersistLibrary || shouldPersistCampaigns;
@@ -877,6 +980,125 @@ app.post('/api/campaigns', (req, res) => {
   res.status(201).json({ campaign });
 });
 
+app.post('/api/playlists', (req, res) => {
+  const name = (req.body?.name || '').toString().trim();
+  const campaignId = (req.body?.campaignId || '').toString().trim();
+  const inputTrackIds = Array.isArray(req.body?.trackIds) ? req.body.trackIds : [];
+
+  if (!name) {
+    res.status(400).json({ error: 'Le nom de la playlist est requis.' });
+    return;
+  }
+
+  if (!campaignId || !campaignsById[campaignId]) {
+    res.status(400).json({ error: 'Sélectionnez une campagne valide.' });
+    return;
+  }
+
+  const trackIds = Array.from(
+    new Set(
+      inputTrackIds
+        .map((trackId) => (trackId || '').toString().trim())
+        .filter((trackId) => trackId && detectTrackKind(tracksById[trackId]) === 'audio')
+    )
+  );
+
+  if (!trackIds.length) {
+    res.status(400).json({ error: 'Ajoutez au moins une piste audio à la playlist.' });
+    return;
+  }
+
+  const playlist = {
+    id: createPlaylistId(name),
+    name,
+    campaignId,
+    trackIds,
+    createdAt: new Date().toISOString()
+  };
+
+  const collection = ensureCustomCollection('playlists');
+  collection.push(playlist);
+  persistCustomLibrary();
+  refreshLibrary();
+  io.emit('library:update', library);
+
+  res.status(201).json({ playlist });
+});
+
+app.delete('/api/playlists/:id', (req, res) => {
+  const playlistId = (req.params?.id || '').toString().trim();
+  const collection = ensureCustomCollection('playlists');
+
+  if (!playlistId) {
+    res.status(400).json({ error: 'Identifiant de playlist manquant.' });
+    return;
+  }
+
+  const playlistIndex = collection.findIndex((playlist) => playlist.id === playlistId);
+
+  if (playlistIndex === -1) {
+    res.status(404).json({ error: 'Playlist introuvable.' });
+    return;
+  }
+
+  collection.splice(playlistIndex, 1);
+  persistCustomLibrary();
+  refreshLibrary();
+  io.emit('library:update', library);
+
+  res.status(200).json({ success: true });
+});
+
+app.patch('/api/playlists/:id/tracks', (req, res) => {
+  const playlistId = (req.params?.id || '').toString().trim();
+  const trackId = (req.body?.trackId || '').toString().trim();
+  const action = (req.body?.action || 'add').toString().trim().toLowerCase();
+  const collection = ensureCustomCollection('playlists');
+
+  if (!playlistId || !trackId) {
+    res.status(400).json({ error: 'Playlist et piste sont requises.' });
+    return;
+  }
+
+  const playlistIndex = collection.findIndex((playlist) => playlist.id === playlistId);
+
+  if (playlistIndex === -1) {
+    res.status(404).json({ error: 'Playlist introuvable.' });
+    return;
+  }
+
+  const track = tracksById[trackId];
+
+  if (!track || detectTrackKind(track) !== 'audio') {
+    res.status(400).json({ error: 'Seules les pistes audio peuvent être ajoutées aux playlists.' });
+    return;
+  }
+
+  const playlist = collection[playlistIndex];
+  const currentTrackIds = Array.isArray(playlist.trackIds)
+    ? playlist.trackIds.map((entry) => (entry || '').toString().trim()).filter(Boolean)
+    : [];
+
+  let nextTrackIds = currentTrackIds;
+
+  if (action === 'remove') {
+    nextTrackIds = currentTrackIds.filter((id) => id !== trackId);
+  } else {
+    nextTrackIds = Array.from(new Set([...currentTrackIds, trackId]));
+  }
+
+  collection[playlistIndex] = {
+    ...playlist,
+    trackIds: nextTrackIds
+  };
+
+  persistCustomLibrary();
+  refreshLibrary();
+  io.emit('library:update', library);
+
+  res.status(200).json({ playlist: collection[playlistIndex] });
+});
+
 app.get('/api/audio', (req, res) => {
   res.json({ mix: currentAudioMix });
 });
@@ -890,6 +1112,7 @@ app.get('/api/assets/custom', (req, res) => {
     backgrounds: customLibrary.backgrounds ?? [],
     characters: customLibrary.characters ?? [],
     tracks: customLibrary.tracks ?? [],
+    playlists: customLibrary.playlists ?? [],
     campaigns: customLibrary.campaigns ?? [],
     audioTracks,
     videoTracks
