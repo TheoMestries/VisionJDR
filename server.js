@@ -156,6 +156,9 @@ const createPlaylistId = (name) => {
   return `playlist-${base}-${timestamp}-${randomSuffix()}`;
 };
 
+const normalisePlaylistFolder = (value) =>
+  (value || '').toString().trim().replace(/\s+/g, ' ') || 'Sans dossier';
+
 const normaliseCampaign = (campaign) => {
   if (!campaign || typeof campaign !== 'object') {
     return null;
@@ -400,6 +403,7 @@ const loadCustomLibrary = () => {
                 .map((entry) => (entry || '').toString().trim())
                 .filter(Boolean)
             : [];
+          const folder = normalisePlaylistFolder(playlist.folder);
 
           if (!name) {
             needsPersist = true;
@@ -409,7 +413,8 @@ const loadCustomLibrary = () => {
           if (
             id !== playlist.id ||
             campaignId !== playlist.campaignId ||
-            !Array.isArray(playlist.trackIds)
+            !Array.isArray(playlist.trackIds) ||
+            folder !== playlist.folder
           ) {
             needsPersist = true;
           }
@@ -417,6 +422,7 @@ const loadCustomLibrary = () => {
           return {
             id,
             name,
+            folder,
             campaignId,
             trackIds,
             createdAt: playlist.createdAt || new Date().toISOString()
@@ -982,6 +988,7 @@ app.post('/api/campaigns', (req, res) => {
 
 app.post('/api/playlists', (req, res) => {
   const name = (req.body?.name || '').toString().trim();
+  const folder = normalisePlaylistFolder(req.body?.folder);
   const campaignId = (req.body?.campaignId || '').toString().trim();
   const inputTrackIds = Array.isArray(req.body?.trackIds) ? req.body.trackIds : [];
 
@@ -1011,6 +1018,7 @@ app.post('/api/playlists', (req, res) => {
   const playlist = {
     id: createPlaylistId(name),
     name,
+    folder,
     campaignId,
     trackIds,
     createdAt: new Date().toISOString()

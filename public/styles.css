@@ -567,6 +567,99 @@ main.layout {
   gap: 0.85rem;
 }
 
+.audio-playlists__workspace-field {
+  margin-top: 0.35rem;
+}
+
+.audio-playlists__workspace {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.9fr) minmax(220px, 1.4fr) minmax(280px, 1.5fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.audio-playlists__folders,
+.audio-playlists__entries,
+.audio-playlists__detail {
+  background: rgba(15, 23, 42, 0.58);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-medium);
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.7rem;
+  min-height: 240px;
+}
+
+.audio-playlists__folders h3,
+.audio-playlists__entries h3,
+.audio-playlists__detail h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #e2e8f0;
+}
+
+.audio-playlists__folder-list,
+.audio-playlists__buttons {
+  display: grid;
+  gap: 0.55rem;
+  align-content: start;
+}
+
+.audio-playlists__folder-button,
+.audio-playlists__playlist-button {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(30, 41, 59, 0.6);
+  color: #e2e8f0;
+  border-radius: var(--radius-small);
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.audio-playlists__folder-button[data-selected='true'],
+.audio-playlists__playlist-button[data-selected='true'] {
+  border-color: rgba(56, 189, 248, 0.9);
+  background: rgba(14, 165, 233, 0.2);
+}
+
+.audio-playlists__playlist-button {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.audio-playlists__playlist-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(34, 197, 94, 0.16);
+  color: #86efac;
+}
+
+.audio-playlists__detail-folder {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.audio-playlists__detail-tracks {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.audio-playlists__detail-empty,
+.audio-playlists__empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .audio-playlists--active {
   border: 1px solid rgba(56, 189, 248, 0.45);
   border-radius: var(--radius-medium);
@@ -697,6 +790,12 @@ main.layout {
 
 .audio-mixer__playback[data-state='playing']:hover {
   background: rgba(248, 113, 113, 0.26);
+}
+
+@media (max-width: 1100px) {
+  .audio-playlists__workspace {
+    grid-template-columns: 1fr;
+  }
 }
 
 .audio-mixer__time {

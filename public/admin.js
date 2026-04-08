@@ -19,9 +19,9 @@ const previewLeft = document.getElementById('preview-left');
 const previewRight = document.getElementById('preview-right');
 const audioSelect = document.getElementById('audio-track');
 const audioAddButton = document.getElementById('audio-track-add');
-const playlistSelect = document.getElementById('audio-playlist');
 const playlistApplyButton = document.getElementById('audio-playlist-apply');
 const playlistDeleteButton = document.getElementById('audio-playlist-delete');
+const playlistFolderInput = document.getElementById('audio-playlist-folder');
 const playlistNameInput = document.getElementById('audio-playlist-name');
 const playlistSaveButton = document.getElementById('audio-playlist-save');
 const playlistStartButton = document.getElementById('audio-playlist-start');
@@ -30,6 +30,11 @@ const playlistStopButton = document.getElementById('audio-playlist-stop');
 const playlistCycleInput = document.getElementById('audio-playlist-cycle');
 const playlistActiveElement = document.getElementById('audio-playlist-active');
 const playlistsContainer = document.querySelector('.audio-playlists');
+const playlistFoldersElement = document.getElementById('audio-playlist-folders');
+const playlistButtonsElement = document.getElementById('audio-playlist-buttons');
+const playlistDetailTitle = document.getElementById('audio-playlist-detail-title');
+const playlistDetailFolder = document.getElementById('audio-playlist-detail-folder');
+const playlistDetailTracks = document.getElementById('audio-playlist-detail-tracks');
 const audioActiveList = document.getElementById('audio-active-list');
 const audioEmptyState = document.getElementById('audio-empty');
 const layoutField = layoutSelect ? layoutSelect.closest('.field') : null;
@@ -66,6 +71,8 @@ let fullTracks = [];
 let fullPlaylists = [];
 let playlists = [];
 let playlistsById = {};
+let playlistFolders = {};
+let selectedPlaylistFolder = null;
 let selectedPlaylistId = null;
 let activePlaylistId = null;
 let activePlaylistTrackOrder = [];
@@ -253,11 +260,10 @@ const refreshFormOptions = ({ preservedScene = null } = {}) => {
   populateVideoSelect(videoSelect, videoTracks);
   populateAudioSelect(audioSelect, audioTracks);
   const previousPlaylistId = selectedPlaylistId;
-  populatePlaylistSelect(playlistSelect, playlists);
-  if (playlistSelect && previousPlaylistId && playlistsById[previousPlaylistId]) {
-    playlistSelect.value = previousPlaylistId;
+  if (previousPlaylistId && playlistsById[previousPlaylistId]) {
+    selectedPlaylistId = previousPlaylistId;
   }
-  selectedPlaylistId = playlistSelect?.value || null;
+  renderPlaylistWorkspace();
   const mixChanged = applyAudioMixLocally(currentAudioMix);
 
   if (mixChanged && socket) {
@@ -785,28 +791,153 @@ const populateAudioSelect = (select, tracks) => {
   });
 };
 
-const populatePlaylistSelect = (select, entries) => {
-  if (!select) {
+const PLAYLIST_DEFAULT_FOLDER = 'Sans dossier';
+
+const normalisePlaylistFolder = (value) => {
+  const folder = (value || '').toString().trim().replace(/\s+/g, ' ');
+  return folder || PLAYLIST_DEFAULT_FOLDER;
+};
+
+const buildPlaylistFolders = (entries) => {
+  const grouped = {};
+
+  (Array.isArray(entries) ? entries : []).forEach((playlist) => {
+    const folder = normalisePlaylistFolder(playlist?.folder);
+
+    if (!grouped[folder]) {
+      grouped[folder] = [];
+    }
+
+    grouped[folder].push(playlist);
+  });
+
+  Object.values(grouped).forEach((folderEntries) => {
+    folderEntries.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr'));
+  });
+
+  return grouped;
+};
+
+const ensurePlaylistSelections = () => {
+  const folders = Object.keys(playlistFolders).sort((a, b) => a.localeCompare(b, 'fr'));
+
+  if (!folders.length) {
+    selectedPlaylistFolder = null;
+    selectedPlaylistId = null;
     return;
   }
 
-  select.innerHTML = '';
+  if (!selectedPlaylistFolder || !playlistFolders[selectedPlaylistFolder]) {
+    selectedPlaylistFolder = folders[0];
+  }
 
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = entries.length
-    ? 'Sélectionnez une playlist'
-    : 'Aucune playlist enregistrée';
-  placeholder.selected = true;
-  placeholder.dataset.placeholder = 'true';
-  select.appendChild(placeholder);
+  const entries = playlistFolders[selectedPlaylistFolder] || [];
+
+  if (!selectedPlaylistId || !entries.some((playlist) => playlist.id === selectedPlaylistId)) {
+    selectedPlaylistId = entries[0]?.id || null;
+  }
+};
+
+const renderPlaylistDetail = () => {
+  if (!playlistDetailTitle || !playlistDetailFolder || !playlistDetailTracks) {
+    return;
+  }
+
+  const playlist = selectedPlaylistId ? playlistsById[selectedPlaylistId] : null;
+
+  if (!playlist) {
+    playlistDetailTitle.textContent = 'Sélectionnez une playlist';
+    playlistDetailFolder.textContent = 'Dossier : —';
+    playlistDetailTracks.replaceChildren();
+    const emptyLine = document.createElement('li');
+    emptyLine.className = 'audio-playlists__detail-empty';
+    emptyLine.textContent = 'Aucune playlist sélectionnée.';
+    playlistDetailTracks.appendChild(emptyLine);
+    return;
+  }
+
+  const folder = normalisePlaylistFolder(playlist.folder);
+  playlistDetailTitle.textContent = playlist.name || 'Playlist';
+  playlistDetailFolder.textContent = `Dossier : ${folder}`;
+  playlistDetailTracks.replaceChildren();
+
+  const trackIds = Array.isArray(playlist.trackIds) ? playlist.trackIds : [];
+  const validTrackIds = trackIds.filter((trackId) => audioTracksById[trackId]);
+
+  if (!validTrackIds.length) {
+    const emptyLine = document.createElement('li');
+    emptyLine.className = 'audio-playlists__detail-empty';
+    emptyLine.textContent = 'Cette playlist ne contient aucune piste audio disponible.';
+    playlistDetailTracks.appendChild(emptyLine);
+    return;
+  }
+
+  validTrackIds.forEach((trackId) => {
+    const entry = document.createElement('li');
+    entry.textContent = audioTracksById[trackId]?.name || 'Piste audio';
+    playlistDetailTracks.appendChild(entry);
+  });
+};
+
+const renderPlaylistWorkspace = () => {
+  if (!playlistFoldersElement || !playlistButtonsElement) {
+    return;
+  }
+
+  playlistFolders = buildPlaylistFolders(playlists);
+  ensurePlaylistSelections();
+
+  playlistFoldersElement.replaceChildren();
+  playlistButtonsElement.replaceChildren();
+
+  const folders = Object.keys(playlistFolders).sort((a, b) => a.localeCompare(b, 'fr'));
+
+  if (!folders.length) {
+    const emptyFolder = document.createElement('p');
+    emptyFolder.className = 'audio-playlists__empty';
+    emptyFolder.textContent = 'Aucun dossier.';
+    playlistFoldersElement.appendChild(emptyFolder);
+
+    const emptyPlaylist = document.createElement('p');
+    emptyPlaylist.className = 'audio-playlists__empty';
+    emptyPlaylist.textContent = 'Aucune playlist enregistrée.';
+    playlistButtonsElement.appendChild(emptyPlaylist);
+    renderPlaylistDetail();
+    return;
+  }
+
+  folders.forEach((folder) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'audio-playlists__folder-button';
+    button.textContent = folder;
+    button.dataset.selected = String(folder === selectedPlaylistFolder);
+    button.addEventListener('click', () => {
+      selectedPlaylistFolder = folder;
+      selectedPlaylistId = playlistFolders[folder]?.[0]?.id || null;
+      renderPlaylistWorkspace();
+      updatePlaylistControlsAvailability();
+    });
+    playlistFoldersElement.appendChild(button);
+  });
+
+  const entries = playlistFolders[selectedPlaylistFolder] || [];
 
   entries.forEach((playlist) => {
-    const option = document.createElement('option');
-    option.value = playlist.id;
-    option.textContent = playlist.name || 'Playlist';
-    select.appendChild(option);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'audio-playlists__playlist-button';
+    button.dataset.selected = String(playlist.id === selectedPlaylistId);
+    button.innerHTML = `<span class="audio-playlists__playlist-icon" aria-hidden="true">♪</span><span>${playlist.name || 'Playlist'}</span>`;
+    button.addEventListener('click', () => {
+      selectedPlaylistId = playlist.id;
+      renderPlaylistWorkspace();
+      updatePlaylistControlsAvailability();
+    });
+    playlistButtonsElement.appendChild(button);
   });
+
+  renderPlaylistDetail();
 };
 
 const updateActivePlaylistDisplay = () => {
@@ -1316,7 +1447,6 @@ function updateAudioControlsAvailability() {
 
 function updatePlaylistControlsAvailability() {
   const hasPlaylistControls =
-    playlistSelect &&
     playlistApplyButton &&
     playlistDeleteButton &&
     playlistSaveButton &&
@@ -1330,19 +1460,17 @@ function updatePlaylistControlsAvailability() {
   }
 
   const hasPlaylists = playlists.length > 0;
-  const selectedPlaylistId = playlistSelect.value;
   const hasSelectedPlaylist = Boolean(selectedPlaylistId && playlistsById[selectedPlaylistId]);
   const hasMixTracks = Array.isArray(currentAudioMix?.tracks) && currentAudioMix.tracks.length > 0;
   const hasName = Boolean((playlistNameInput?.value || '').trim());
 
-  playlistSelect.disabled = !hasPlaylists;
   playlistApplyButton.disabled = !hasSelectedPlaylist;
   playlistDeleteButton.disabled = !hasSelectedPlaylist;
   playlistSaveButton.disabled = !hasMixTracks || !hasName || !selectedCampaignId;
-  playlistStartButton.disabled = !hasMixTracks;
-  playlistStartRandomButton.disabled = !hasMixTracks;
+  playlistStartButton.disabled = !hasSelectedPlaylist;
+  playlistStartRandomButton.disabled = !hasSelectedPlaylist;
   playlistStopButton.disabled = !hasMixTracks;
-  playlistCycleInput.disabled = !hasMixTracks;
+  playlistCycleInput.disabled = !hasSelectedPlaylist && !hasMixTracks && !hasPlaylists;
   updateActivePlaylistDisplay();
 }
 
@@ -1696,6 +1824,7 @@ function handleAudioUpdate(mix) {
 
 const saveCurrentMixAsPlaylist = async () => {
   const name = (playlistNameInput?.value || '').trim();
+  const folder = normalisePlaylistFolder(playlistFolderInput?.value);
 
   if (!name) {
     statusElement.textContent = 'Saisissez un nom de playlist.';
@@ -1721,6 +1850,7 @@ const saveCurrentMixAsPlaylist = async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name,
+      folder,
       campaignId: selectedCampaignId,
       trackIds
     })
@@ -1735,14 +1865,16 @@ const saveCurrentMixAsPlaylist = async () => {
   if (playlistNameInput) {
     playlistNameInput.value = '';
   }
+  if (playlistFolderInput) {
+    playlistFolderInput.value = '';
+  }
 
   statusElement.textContent = `Playlist « ${name} » enregistrée.`;
   updatePlaylistControlsAvailability();
 };
 
 const applySelectedPlaylist = () => {
-  const selectedPlaylistId = playlistSelect?.value || '';
-  const playlist = playlistsById[selectedPlaylistId];
+  const playlist = selectedPlaylistId ? playlistsById[selectedPlaylistId] : null;
 
   if (!playlist) {
     statusElement.textContent = 'Sélectionnez une playlist à charger.';
@@ -1780,6 +1912,18 @@ const shuffleTrackIds = (trackIds) => {
 };
 
 const startSelectedPlaylistPlayback = ({ random = false } = {}) => {
+  const selectedPlaylist = selectedPlaylistId ? playlistsById[selectedPlaylistId] : null;
+
+  if (!selectedPlaylist) {
+    statusElement.textContent = 'Sélectionnez une playlist avant de lancer la lecture.';
+    updatePlaylistControlsAvailability();
+    return;
+  }
+
+  if (activePlaylistId !== selectedPlaylist.id) {
+    applySelectedPlaylist();
+  }
+
   const tracks = Array.isArray(currentAudioMix?.tracks) ? currentAudioMix.tracks : [];
   const playableTrackIds = tracks.map((track) => track.id).filter((id) => audioTracksById[id]);
 
@@ -1823,8 +1967,7 @@ const stopPlaylistPlaybackAndClearMix = () => {
 };
 
 const deleteSelectedPlaylist = async () => {
-  const selectedPlaylistId = playlistSelect?.value || '';
-  const playlist = playlistsById[selectedPlaylistId];
+  const playlist = selectedPlaylistId ? playlistsById[selectedPlaylistId] : null;
 
   if (!playlist) {
     statusElement.textContent = 'Sélectionnez une playlist à supprimer.';
@@ -2260,8 +2403,7 @@ const initialise = async () => {
   populateSelect(backgroundSelect, backgrounds);
   populateVideoSelect(videoSelect, videoTracks);
   populateAudioSelect(audioSelect, audioTracks);
-  populatePlaylistSelect(playlistSelect, playlists);
-  selectedPlaylistId = playlistSelect?.value || null;
+  renderPlaylistWorkspace();
   if (activePlaylistId && !playlistsById[activePlaylistId]) {
     activePlaylistId = null;
   }
@@ -2295,13 +2437,6 @@ if (campaignSelect) {
 if (audioSelect) {
   audioSelect.addEventListener('change', () => {
     updateAudioControlsAvailability();
-  });
-}
-
-if (playlistSelect) {
-  playlistSelect.addEventListener('change', () => {
-    selectedPlaylistId = playlistSelect.value || null;
-    updatePlaylistControlsAvailability();
   });
 }
 
