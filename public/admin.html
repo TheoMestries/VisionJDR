@@ -118,21 +118,14 @@
 
             <div class="audio-playlists">
               <label class="field audio-mixer__field">
-                <span class="field__label">Playlists enregistrées</span>
-                <div class="audio-mixer__input-row">
-                  <select id="audio-playlist" name="audio-playlist"></select>
-                  <button type="button" class="audio-mixer__add" id="audio-playlist-apply">
-                    Charger
-                  </button>
-                  <button type="button" class="audio-mixer__stop" id="audio-playlist-delete">
-                    Supprimer
-                  </button>
-                </div>
-              </label>
-
-              <label class="field audio-mixer__field">
                 <span class="field__label">Créer une playlist depuis le mix actif</span>
                 <div class="audio-mixer__input-row">
+                  <input
+                    type="text"
+                    id="audio-playlist-folder"
+                    name="audio-playlist-folder"
+                    placeholder="Dossier (ex. Ambiances/Taverne)"
+                  />
                   <input
                     type="text"
                     id="audio-playlist-name"
@@ -145,22 +138,45 @@
                 </div>
               </label>
 
-              <div class="field audio-mixer__field">
-                <span class="field__label">Lecture de la playlist sélectionnée</span>
-                <div class="audio-mixer__input-row">
-                  <button type="button" class="audio-mixer__add" id="audio-playlist-start">
-                    Lancer
-                  </button>
-                  <button type="button" class="audio-mixer__add" id="audio-playlist-start-random">
-                    Lancer aléatoire
-                  </button>
-                  <button type="button" class="audio-mixer__stop" id="audio-playlist-stop">
-                    Arrêter et vider
-                  </button>
-                  <label class="audio-mixer__loop">
-                    <input type="checkbox" id="audio-playlist-cycle" />
-                    <span>Boucler la playlist</span>
-                  </label>
+              <div class="field audio-mixer__field audio-playlists__workspace-field">
+                <span class="field__label">Explorateur de playlists</span>
+                <div class="audio-playlists__workspace" id="audio-playlists-workspace">
+                  <aside class="audio-playlists__folders">
+                    <h3>Dossiers</h3>
+                    <div class="audio-playlists__folder-list" id="audio-playlist-folders"></div>
+                  </aside>
+                  <section class="audio-playlists__entries">
+                    <h3>Playlists</h3>
+                    <div class="audio-playlists__buttons" id="audio-playlist-buttons"></div>
+                  </section>
+                  <section class="audio-playlists__detail" id="audio-playlist-detail">
+                    <h3 id="audio-playlist-detail-title">Sélectionnez une playlist</h3>
+                    <p class="audio-playlists__detail-folder" id="audio-playlist-detail-folder">
+                      Dossier : —
+                    </p>
+                    <ol class="audio-playlists__detail-tracks" id="audio-playlist-detail-tracks"></ol>
+                    <div class="audio-mixer__input-row">
+                      <button type="button" class="audio-mixer__add" id="audio-playlist-apply">
+                        Charger dans le mix
+                      </button>
+                      <button type="button" class="audio-mixer__add" id="audio-playlist-start">
+                        Lancer dans l'ordre
+                      </button>
+                      <button type="button" class="audio-mixer__add" id="audio-playlist-start-random">
+                        Lancer aléatoire
+                      </button>
+                      <button type="button" class="audio-mixer__stop" id="audio-playlist-delete">
+                        Supprimer
+                      </button>
+                      <button type="button" class="audio-mixer__stop" id="audio-playlist-stop">
+                        Arrêter et vider
+                      </button>
+                      <label class="audio-mixer__loop">
+                        <input type="checkbox" id="audio-playlist-cycle" />
+                        <span>Boucler la playlist</span>
+                      </label>
+                    </div>
+                  </section>
                 </div>
               </div>
 
