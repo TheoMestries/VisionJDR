@@ -646,23 +646,15 @@ main.layout {
   font-size: 0.9rem;
 }
 
-.audio-playlists__detail-tracks {
-  margin: 0;
-  padding-left: 1.25rem;
+.audio-playlists__mix {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.65rem;
 }
 
-.audio-playlists__detail-track {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-}
-
-.audio-playlists__track-remove {
-  padding: 0.3rem 0.55rem;
-  font-size: 0.8rem;
+.audio-playlists__mix h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #e2e8f0;
 }
 
 .audio-playlists__detail-empty,
