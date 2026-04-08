@@ -131,7 +131,8 @@ const createAudioPlayer = (source) => {
     source,
     pendingSeek: null,
     lastPosition: undefined,
-    desiredVolume: 1
+    desiredVolume: 1,
+    desiredPlaying: true
   };
 
   audioElement.addEventListener('loadedmetadata', () => {
@@ -167,10 +168,12 @@ const ensureAudioPlayer = (id, source) => {
   if (player.source !== source) {
     player.audio.pause();
     player.audio.src = source;
+    player.audio.load();
     player.source = source;
     player.pendingSeek = null;
     player.lastPosition = undefined;
     player.desiredVolume = 1;
+    player.desiredPlaying = true;
 
     try {
       player.audio.currentTime = 0;
@@ -245,6 +248,10 @@ const unlockAudioPlayback = () => {
 
   players.forEach((player) => {
     const { audio, desiredVolume } = player;
+
+    if (player.desiredPlaying === false) {
+      return;
+    }
 
     try {
       audio.muted = false;
@@ -678,6 +685,7 @@ const applyAudioMix = (mix) => {
     }
 
     const shouldPlay = track.playing === false ? false : true;
+    player.desiredPlaying = shouldPlay;
 
     if (shouldPlay) {
       audio.muted = false;
@@ -776,32 +784,38 @@ const handleLibraryUpdate = (library) => {
 };
 
 const initialise = async () => {
-  const [libraryResponse, sceneResponse, audioResponse] = await Promise.all([
-    fetch('/api/library'),
-    fetch('/api/scene'),
-    fetch('/api/audio')
-  ]);
+  try {
+    const [libraryResponse, sceneResponse, audioResponse] = await Promise.all([
+      fetch('/api/library'),
+      fetch('/api/scene'),
+      fetch('/api/audio')
+    ]);
 
-  if (!libraryResponse.ok || !sceneResponse.ok || !audioResponse.ok) {
+    if (!libraryResponse.ok || !sceneResponse.ok || !audioResponse.ok) {
+      if (subtitleElement) {
+        subtitleElement.textContent = 'Impossible de charger les scènes';
+      }
+      return;
+    }
+
+    const library = await libraryResponse.json();
+    const sceneData = await sceneResponse.json();
+    const audioData = await audioResponse.json();
+
+    handleLibraryUpdate(library);
+
+    renderScene(sceneData.scene);
+    applyAudioMix(audioData.mix);
+
+    const socket = io();
+    socket.on('scene:update', renderScene);
+    socket.on('library:update', handleLibraryUpdate);
+    socket.on('audio:update', applyAudioMix);
+  } catch (error) {
     if (subtitleElement) {
       subtitleElement.textContent = 'Impossible de charger les scènes';
     }
-    return;
   }
-
-  const library = await libraryResponse.json();
-  const sceneData = await sceneResponse.json();
-  const audioData = await audioResponse.json();
-
-  handleLibraryUpdate(library);
-
-  renderScene(sceneData.scene);
-  applyAudioMix(audioData.mix);
-
-  const socket = io();
-  socket.on('scene:update', renderScene);
-  socket.on('library:update', handleLibraryUpdate);
-  socket.on('audio:update', applyAudioMix);
 };
 
 initialise();
