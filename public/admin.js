@@ -19,7 +19,6 @@ const previewLeft = document.getElementById('preview-left');
 const previewRight = document.getElementById('preview-right');
 const audioSelect = document.getElementById('audio-track');
 const audioAddButton = document.getElementById('audio-track-add');
-const playlistApplyButton = document.getElementById('audio-playlist-apply');
 const playlistDeleteButton = document.getElementById('audio-playlist-delete');
 const playlistFolderInput = document.getElementById('audio-playlist-folder');
 const playlistNameInput = document.getElementById('audio-playlist-name');
@@ -59,6 +58,9 @@ let audioTracksById = {};
 let videoTracks = [];
 let videoTracksById = {};
 let currentAudioMix = { tracks: [] };
+let manualAudioMix = { tracks: [] };
+let playlistAudioMixes = {};
+let currentMixContext = { type: 'manual', playlistId: null };
 const adminAudioPlayers = new Map();
 let audioUiFrame = null;
 let campaigns = [];
@@ -881,6 +883,100 @@ const updatePlaylistTrackMembership = async (trackId, action = 'add') => {
 
   statusElement.textContent =
     action === 'remove' ? 'Piste retirée de la playlist.' : 'Piste ajoutée à la playlist.';
+
+  if (selectedPlaylistId) {
+    const updatedPlaylist = playlistsById[selectedPlaylistId];
+
+    if (updatedPlaylist) {
+      const existingMix = playlistAudioMixes[selectedPlaylistId] || { tracks: [] };
+      playlistAudioMixes[selectedPlaylistId] = createPlaylistMixFromDefinition(
+        updatedPlaylist,
+        existingMix
+      );
+
+      if (
+        currentMixContext.type === 'playlist' &&
+        currentMixContext.playlistId === selectedPlaylistId
+      ) {
+        const changed = applyAudioMixLocally(playlistAudioMixes[selectedPlaylistId]);
+
+        if (changed && socket) {
+          socket.emit('audio:set', currentAudioMix);
+        }
+      }
+    }
+  }
+};
+
+const cloneAudioMix = (mix) => ({
+  tracks: (Array.isArray(mix?.tracks) ? mix.tracks : []).map((track) => ({ ...track }))
+});
+
+const createPlaylistMixFromDefinition = (playlist, existingMix = { tracks: [] }) => {
+  const playlistTracks = Array.isArray(playlist?.trackIds) ? playlist.trackIds : [];
+  const existingTracks = Array.isArray(existingMix?.tracks) ? existingMix.tracks : [];
+  const existingById = Object.fromEntries(existingTracks.map((track) => [track.id, track]));
+
+  const tracks = playlistTracks
+    .filter((trackId) => audioTracksById[trackId])
+    .map((trackId) => {
+      const existing = existingById[trackId];
+
+      return existing
+        ? { ...existing, id: trackId }
+        : { id: trackId, volume: 1, loop: false, playing: false, position: 0 };
+    });
+
+  return { tracks };
+};
+
+const persistCurrentContextMix = () => {
+  if (currentMixContext.type === 'playlist' && currentMixContext.playlistId) {
+    playlistAudioMixes[currentMixContext.playlistId] = cloneAudioMix(currentAudioMix);
+    return;
+  }
+
+  manualAudioMix = cloneAudioMix(currentAudioMix);
+};
+
+const activateManualMix = () => {
+  persistCurrentContextMix();
+  currentMixContext = { type: 'manual', playlistId: null };
+  activePlaylistId = null;
+  activePlaylistTrackOrder = [];
+  const changed = applyAudioMixLocally(manualAudioMix);
+
+  if (changed && socket) {
+    socket.emit('audio:set', currentAudioMix);
+  }
+};
+
+const activatePlaylistMix = (playlistId) => {
+  const playlist = playlistId ? playlistsById[playlistId] : null;
+
+  if (!playlist) {
+    statusElement.textContent = 'Sélectionnez une playlist à charger.';
+    updatePlaylistControlsAvailability();
+    return false;
+  }
+
+  persistCurrentContextMix();
+
+  const existingMix = playlistAudioMixes[playlist.id] || { tracks: [] };
+  const nextMix = createPlaylistMixFromDefinition(playlist, existingMix);
+  playlistAudioMixes[playlist.id] = cloneAudioMix(nextMix);
+  currentMixContext = { type: 'playlist', playlistId: playlist.id };
+  activePlaylistId = playlist.id;
+  activePlaylistTrackOrder = nextMix.tracks.map((track) => track.id);
+  const changed = applyAudioMixLocally(nextMix);
+
+  if (changed && socket) {
+    socket.emit('audio:set', currentAudioMix);
+  }
+
+  statusElement.textContent = `Playlist « ${playlist.name} » prête automatiquement dans son mix dédié.`;
+  updateActivePlaylistDisplay();
+  return true;
 };
 
 const renderPlaylistWorkspace = () => {
@@ -936,6 +1032,7 @@ const renderPlaylistWorkspace = () => {
     button.addEventListener('click', () => {
       selectedPlaylistId = playlist.id;
       renderPlaylistWorkspace();
+      activatePlaylistMix(playlist.id);
       updatePlaylistControlsAvailability();
     });
     playlistButtonsElement.appendChild(button);
@@ -1451,7 +1548,6 @@ function updateAudioControlsAvailability() {
 
 function updatePlaylistControlsAvailability() {
   const hasPlaylistControls =
-    playlistApplyButton &&
     playlistDeleteButton &&
     playlistSaveButton &&
     playlistStartButton &&
@@ -1471,7 +1567,6 @@ function updatePlaylistControlsAvailability() {
     playlistTrackSelect?.value && audioTracksById[playlistTrackSelect.value]
   );
 
-  playlistApplyButton.disabled = !hasSelectedPlaylist;
   playlistDeleteButton.disabled = !hasSelectedPlaylist;
   playlistSaveButton.disabled = !hasName || !selectedCampaignId;
   playlistStartButton.disabled = !hasSelectedPlaylist;
@@ -1874,33 +1969,6 @@ const saveCurrentMixAsPlaylist = async () => {
   updatePlaylistControlsAvailability();
 };
 
-const applySelectedPlaylist = () => {
-  const playlist = selectedPlaylistId ? playlistsById[selectedPlaylistId] : null;
-
-  if (!playlist) {
-    statusElement.textContent = 'Sélectionnez une playlist à charger.';
-    updatePlaylistControlsAvailability();
-    return;
-  }
-
-  const playlistTracks = Array.isArray(playlist.trackIds) ? playlist.trackIds : [];
-  const nextTracks = playlistTracks
-    .filter((trackId) => audioTracksById[trackId])
-    .map((trackId) => ({
-      id: trackId,
-      volume: 1,
-      loop: false,
-      playing: false,
-      position: 0
-    }));
-
-  updateAudioMixState(() => nextTracks);
-  activePlaylistId = playlist.id;
-  activePlaylistTrackOrder = nextTracks.map((track) => track.id);
-  statusElement.textContent = `Playlist « ${playlist.name} » chargée.`;
-  updateActivePlaylistDisplay();
-};
-
 const shuffleTrackIds = (trackIds) => {
   const shuffled = [...trackIds];
 
@@ -1921,8 +1989,8 @@ const startSelectedPlaylistPlayback = ({ random = false } = {}) => {
     return;
   }
 
-  if (activePlaylistId !== selectedPlaylist.id) {
-    applySelectedPlaylist();
+  if (!activatePlaylistMix(selectedPlaylist.id)) {
+    return;
   }
 
   const tracks = Array.isArray(currentAudioMix?.tracks) ? currentAudioMix.tracks : [];
@@ -1960,9 +2028,17 @@ const stopPlaylistPlaybackAndClearMix = () => {
   }
 
   updateAudioMixState(() => []);
-  activePlaylistId = null;
-  activePlaylistTrackOrder = [];
-  statusElement.textContent = 'Lecture arrêtée et mix audio vidé.';
+
+  if (currentMixContext.type === 'playlist' && currentMixContext.playlistId) {
+    playlistAudioMixes[currentMixContext.playlistId] = { tracks: [] };
+    statusElement.textContent = 'Lecture arrêtée et mix de playlist vidé.';
+  } else {
+    manualAudioMix = { tracks: [] };
+    statusElement.textContent = 'Lecture arrêtée et mix hors playlist vidé.';
+    activePlaylistId = null;
+    activePlaylistTrackOrder = [];
+  }
+
   updateActivePlaylistDisplay();
   updatePlaylistControlsAvailability();
 };
@@ -2410,6 +2486,9 @@ const initialise = async () => {
     activePlaylistId = null;
   }
   applyAudioMixLocally(audioData.mix);
+  manualAudioMix = cloneAudioMix(audioData.mix);
+  playlistAudioMixes = {};
+  currentMixContext = { type: 'manual', playlistId: null };
   updateVideoSelectAvailability();
 
   attachFormListeners();
@@ -2467,6 +2546,8 @@ if (audioAddButton) {
       return;
     }
 
+    activateManualMix();
+
     updateAudioMixState((tracks) => {
       if (tracks.some((track) => track.id === selectedId)) {
         return tracks;
@@ -2485,12 +2566,6 @@ if (audioAddButton) {
     }
 
     updateAudioControlsAvailability();
-  });
-}
-
-if (playlistApplyButton) {
-  playlistApplyButton.addEventListener('click', () => {
-    applySelectedPlaylist();
   });
 }
 
