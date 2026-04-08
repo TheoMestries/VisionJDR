@@ -118,7 +118,7 @@
 
             <div class="audio-playlists">
               <label class="field audio-mixer__field">
-                <span class="field__label">Créer une playlist depuis le mix actif</span>
+                <span class="field__label">Créer une playlist vide (configurable à droite)</span>
                 <div class="audio-mixer__input-row">
                   <input
                     type="text"
@@ -154,10 +154,16 @@
                     <p class="audio-playlists__detail-folder" id="audio-playlist-detail-folder">
                       Dossier : —
                     </p>
+                    <div class="audio-mixer__input-row">
+                      <select id="audio-playlist-track" name="audio-playlist-track"></select>
+                      <button type="button" class="audio-mixer__add" id="audio-playlist-track-add">
+                        Ajouter à la playlist
+                      </button>
+                    </div>
                     <ol class="audio-playlists__detail-tracks" id="audio-playlist-detail-tracks"></ol>
                     <div class="audio-mixer__input-row">
                       <button type="button" class="audio-mixer__add" id="audio-playlist-apply">
-                        Charger dans le mix
+                        Préparer dans le mix
                       </button>
                       <button type="button" class="audio-mixer__add" id="audio-playlist-start">
                         Lancer dans l'ordre

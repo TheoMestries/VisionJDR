@@ -1010,11 +1010,6 @@ app.post('/api/playlists', (req, res) => {
     )
   );
 
-  if (!trackIds.length) {
-    res.status(400).json({ error: 'Ajoutez au moins une piste audio à la playlist.' });
-    return;
-  }
-
   const playlist = {
     id: createPlaylistId(name),
     name,
