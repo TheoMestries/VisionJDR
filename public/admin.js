@@ -834,6 +834,51 @@ const formatPositionValue = (value) => {
   return String(Math.round(value * 100) / 100);
 };
 
+const advancePlaylistTrack = (finishedTrackId) => {
+  if (!finishedTrackId) {
+    return;
+  }
+
+  updateAudioMixState((tracks) => {
+    const currentTracks = Array.isArray(tracks) ? tracks : [];
+    const finishedIndex = currentTracks.findIndex((track) => track.id === finishedTrackId);
+
+    if (finishedIndex === -1) {
+      return currentTracks;
+    }
+
+    const finishedTrack = currentTracks[finishedIndex];
+
+    if (!finishedTrack || finishedTrack.loop || finishedTrack.playing === false) {
+      return currentTracks;
+    }
+
+    const nextIndex = currentTracks.findIndex(
+      (track, index) => index > finishedIndex && audioTracksById[track.id]
+    );
+
+    return currentTracks.map((track, index) => {
+      if (index === finishedIndex) {
+        return {
+          ...track,
+          playing: false,
+          position: 0
+        };
+      }
+
+      if (index === nextIndex) {
+        return {
+          ...track,
+          playing: true,
+          position: 0
+        };
+      }
+
+      return track;
+    });
+  });
+};
+
 const ensureAdminAudioPlayer = (trackId, source) => {
   if (!trackId || !source) {
     return null;
@@ -865,6 +910,10 @@ const ensureAdminAudioPlayer = (trackId, source) => {
       }
 
       player.pendingSeek = null;
+    });
+
+    audioElement.addEventListener('ended', () => {
+      advancePlaylistTrack(trackId);
     });
 
     adminAudioPlayers.set(trackId, player);
