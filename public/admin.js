@@ -924,10 +924,9 @@ const syncCombinedAudioMix = ({ emit = true } = {}) => {
 };
 
 const createPlaylistMixFromDefinition = (playlist) => {
-  const playlistTracks = Array.isArray(playlist?.trackIds) ? playlist.trackIds : [];
+  const playlistTracks = getPlayableTrackIdsFromPlaylist(playlist);
 
   const tracks = playlistTracks
-    .filter((trackId) => audioTracksById[trackId])
     .map((trackId) => ({ id: trackId, volume: 1, loop: false, playing: false, position: 0 }));
 
   return { tracks };
@@ -1046,6 +1045,11 @@ const formatPositionValue = (value) => {
   }
 
   return String(Math.round(value * 100) / 100);
+};
+
+const getPlayableTrackIdsFromPlaylist = (playlist) => {
+  const playlistTracks = Array.isArray(playlist?.trackIds) ? playlist.trackIds : [];
+  return playlistTracks.filter((trackId) => Boolean(audioTracksById[trackId]));
 };
 
 const advancePlaylistTrack = (finishedTrackId) => {
@@ -1512,7 +1516,6 @@ function updatePlaylistControlsAvailability() {
     return;
   }
 
-  const hasPlaylists = playlists.length > 0;
   const hasSelectedPlaylist = Boolean(selectedPlaylistId && playlistsById[selectedPlaylistId]);
   const hasMixTracks =
     Array.isArray(playlistPlaybackMix?.tracks) && playlistPlaybackMix.tracks.length > 0;
@@ -1526,7 +1529,7 @@ function updatePlaylistControlsAvailability() {
   playlistStartButton.disabled = !hasSelectedPlaylist;
   playlistStartRandomButton.disabled = !hasSelectedPlaylist;
   playlistStopButton.disabled = !hasMixTracks;
-  playlistCycleInput.disabled = !hasSelectedPlaylist && !hasMixTracks && !hasPlaylists;
+  playlistCycleInput.disabled = !hasSelectedPlaylist && !hasMixTracks;
   if (playlistTrackAddButton) {
     playlistTrackAddButton.disabled = !hasSelectedPlaylist || !hasPlaylistTrackSelection;
   }
@@ -1967,19 +1970,18 @@ const startSelectedPlaylistPlayback = ({ random = false } = {}) => {
     return;
   }
 
-  const nextPlaylistMix = createPlaylistMixFromDefinition(selectedPlaylist);
-  playlistPlaybackMix = cloneAudioMix(nextPlaylistMix);
-  activePlaylistId = selectedPlaylist.id;
-  syncCombinedAudioMix();
-
-  const tracks = Array.isArray(playlistPlaybackMix?.tracks) ? playlistPlaybackMix.tracks : [];
-  const playableTrackIds = tracks.map((track) => track.id).filter((id) => audioTracksById[id]);
+  const playableTrackIds = getPlayableTrackIdsFromPlaylist(selectedPlaylist);
 
   if (!playableTrackIds.length) {
     statusElement.textContent = 'Chargez une playlist avant de lancer la lecture.';
     updatePlaylistControlsAvailability();
     return;
   }
+
+  const nextPlaylistMix = createPlaylistMixFromDefinition(selectedPlaylist);
+  playlistPlaybackMix = cloneAudioMix(nextPlaylistMix);
+  activePlaylistId = selectedPlaylist.id;
+  syncCombinedAudioMix();
 
   activePlaylistTrackOrder = random ? shuffleTrackIds(playableTrackIds) : [...playableTrackIds];
   const firstTrackId = activePlaylistTrackOrder[0];
@@ -2038,6 +2040,9 @@ const deleteSelectedPlaylist = async () => {
 
   if (activePlaylistId === playlist.id) {
     activePlaylistId = null;
+    activePlaylistTrackOrder = [];
+    playlistPlaybackMix = { tracks: [] };
+    syncCombinedAudioMix();
   }
 
   statusElement.textContent = `Playlist « ${playlist.name} » supprimée.`;
